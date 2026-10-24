@@ -1,0 +1,23 @@
+{
+  "name": "desk-keeper",
+  "version": "0.1.0",
+  "description": "Meteora DLMM liquidity desk keeper — bands, harvest, floor stop, holder payouts",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "backtest": "node scripts/backtest.mjs"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "bn.js": "^5.2.5",
+    "bs58": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
