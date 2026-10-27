@@ -90,6 +90,13 @@ export const cfg = {
   incomeMinSweepSol: num('INCOME_MIN_SWEEP_SOL', 0.05),
   incomeKeepSol: num('INCOME_KEEP_SOL', 0.01),
 
+  // --- creator-fee auto-claim (pump.fun fee sharing: permissionless distribute) ---
+  claimEnabled: bool('CLAIM_ENABLED', true),
+  claimCheckSec: num('CLAIM_CHECK_SEC', 60),
+  claimMinUsd: num('CLAIM_MIN_USD', 100),            // distribute as soon as this much is waiting...
+  claimIntervalSec: num('CLAIM_INTERVAL_SEC', 300),  // ...or at least this often
+  claimDustSol: num('CLAIM_DUST_SOL', 0.005),        // never spend a transaction on less than this
+
   // --- stock desk: tokenized stocks (xStocks) vs the real price ---
   stockMode: str('STOCK_MODE', 'paper'),          // off | paper (log only) | live (trades; simulated when DRY_RUN=true)
   stockTickSec: num('STOCK_TICK_SEC', 30),
@@ -98,7 +105,8 @@ export const cfg = {
   stockPersistTicks: num('STOCK_PERSIST_TICKS', 2),
   stockMaxOpen: num('STOCK_MAX_OPEN', 4),
   stockTickers: list('STOCK_TICKERS'),
-  stockRefSource: str('STOCK_REF_SOURCE', 'yahoo'), // yahoo | pyth (pyth needs PYTH_API_KEY)
+  stockRefSource: str('STOCK_REF_SOURCE', 'yahoo'), // finnhub (FINNHUB_KEY) | pyth (PYTH_API_KEY) | yahoo (fallback)
+  finnhubKey: str('FINNHUB_KEY'),
   stockCapitalSol: num('STOCK_CAPITAL_SOL', 10),    // SOL converted into the stock book on first run
   stockInventoryPct: num('STOCK_INVENTORY_PCT', 50), // share of the book held as xStocks (rest stays USDC)
   stockSweepUsd: num('STOCK_SWEEP_USD', 10),        // realised stock P&L is moved into the pot in SOL once this much has built up

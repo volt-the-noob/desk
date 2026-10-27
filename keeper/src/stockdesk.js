@@ -60,6 +60,12 @@ export class StockDesk {
 
   // ---------- prices ----------
   async ref(t) {
+    if (cfg.stockRefSource === 'finnhub' && cfg.finnhubKey) {
+      // real-time US quote; t = time of the last trade, so off-hours it goes stale and the desk stops by itself
+      const j = await getJson(`https://finnhub.io/api/v1/quote?symbol=${t}&token=${cfg.finnhubKey}`);
+      if (!j || !j.c) throw new Error('finnhub: empty quote');
+      return { px: Number(j.c), age: Date.now() / 1000 - Number(j.t) };
+    }
     if (cfg.stockRefSource === 'pyth' && cfg.pythApiKey) {
       const j = await getJson(`https://hermes.pyth.network/v2/updates/price/latest?ids%5B%5D=${BOOK[t].pyth}&parsed=true`, { authorization: `Bearer ${cfg.pythApiKey}` });
       const p = j.parsed[0].price; return { px: Number(p.price) * 10 ** p.expo, age: Date.now() / 1000 - p.publish_time };

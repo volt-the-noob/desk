@@ -2,6 +2,7 @@ import { solBalance, tokenBalanceRaw, unwrapWsol, solUsd } from './chain.js';
 import { buybackAndBurn } from './buyback.js';
 import { Income } from './income.js';
 import { StockDesk } from './stockdesk.js';
+import { FeeClaimer } from './claim.js';
 import { snapshotHolders } from './holders.js';
 import { Pool } from './dlmm.js';
 import { Band } from './band.js';
@@ -37,6 +38,7 @@ export class Fund {
     this.holderToken = null;
     this.income = new Income(this);
     this.stocks = new StockDesk(this);
+    this.claimer = new FeeClaimer(this);
     // paper-trading bankroll: balances and swaps simulated against real pool quotes
     this.virt = cfg.dryRun && cfg.dryRunSol > 0 ? { sol: cfg.dryRunSol, tokens: new Map() } : null;
   }
@@ -170,6 +172,7 @@ export class Fund {
       this.s.status = 'paused';
       await ledger.saveState({ status: 'paused' });
     }
+    try { await this.claimer.tick(); } catch (e) { log.error(`fee claim failed: ${e.message}`); }
     try { await this.income.sweep(); } catch (e) { log.error(`income sweep failed: ${e.message}`); }
     try { await this.stocks.tick(); } catch (e) { log.error(`stock desk tick failed: ${e.message}`); }
     if (this.payoutDue()) await this.payout();
@@ -310,7 +313,7 @@ export class Fund {
       paid_total_usd: r6(s.paidTotalUsd), ops_total_usd: r6(s.opsTotalUsd), buyback_total_sol: r6(s.buybackTotalSol), buyback_total_usd: r6(s.buybackTotalUsd), burned_total_tokens: s.burnedTotal,
       eligible_supply: s.eligibleSupply, holders_count: s.holdersCount,
       income_total_sol: r6(s.incomeTotal), stock_pnl_usd: Math.round(s.stockPnlUsd * 100) / 100, stock_trades: s.stockTrades, stock_mode: cfg.stockMode,
-      stock: this.stocks.view(), stock_book_usd: Math.round(stockUsd * 100) / 100, stock_swept_usd: this.stocks.sweptUsd, stock_realised_usd: this.stocks.realisedUsd, stock_virtual: this.stocks.v, pools_on: this.poolsOn(), pools_start_at: cfg.poolsStartAt || null,
+      stock: this.stocks.view(), stock_book_usd: Math.round(stockUsd * 100) / 100, stock_swept_usd: this.stocks.sweptUsd, stock_realised_usd: this.stocks.realisedUsd, stock_virtual: this.stocks.v, pools_on: this.poolsOn(), pools_start_at: cfg.poolsStartAt || null, fee_claim: this.claimer.view(),
       wallet: this.wallet.publicKey.toBase58(), holder_token_mint: cfg.holderTokenMint || null, ops_wallet: cfg.opsWallet || null,
       dry_run: cfg.dryRun, status: s.status,
       pot_sol: r6(s.pot), fees_total_sol: r6(s.feesTotal), band_pnl_total_sol: r6(s.bandPnlTotal),

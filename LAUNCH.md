@@ -9,14 +9,20 @@ The stock desk funds a simulated book and trades it on executable Jupiter quotes
 (13:30–20:00 UTC, Mon–Fri). Every trade lands in the ledger and on the site exactly as it will live.
 
 ## Launch day
-1. Launch on pump.fun. Set creator fee sharing: 85% → INCOME wallet, 15% → OPS wallet.
+1. Launch on pump.fun. Set creator fee sharing: **85% → the DESK wallet**, 15% → OPS wallet. The keeper distributes the fees itself
+   (at $100 waiting or every 5 minutes) and books the desk's share into the pot. No income wallet needed.
 2. Railway variables:
-   - `HOLDER_TOKEN_MINT=<CA>` · `OPS_WALLET=<ops>` · `INCOME_WALLET_SECRET=<key of the 85% wallet>`
+   - `HOLDER_TOKEN_MINT=<CA>` · `OPS_WALLET=<ops>` (INCOME_WALLET_SECRET stays empty)
    - `POOLS_ENABLED=true` · `POOLS_START_AT=<launch time + 24h, ISO, e.g. 2026-11-03T15:00:00Z>`
    - `OPS_SHARE_PCT=0` and add those 20 points to holders or reserve (OPS is already paid at the source)
    - `DRY_RUN=false` when you are ready to trade real funds
 3. Fund the desk wallet: STOCK_CAPITAL_SOL (default 10) + pool capital + 0.2 SOL gas.
 4. Site `index.html` config: `CONTRACT_ADDRESS`, `X_URL`.
+
+## Keys
+- `RPC_URL`: Helius (required for holder snapshots and reliable sends)
+- `FINNHUB_KEY` + `STOCK_REF_SOURCE=finnhub`: the real stock price the desk trades against
+- At launch: wipe the rehearsal ledger so the payout clock and stats start at zero
 
 ## Day 2
 Nothing to do: the pool desk switches itself on at POOLS_START_AT and the site's countdown turns into live seats.
