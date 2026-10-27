@@ -60,6 +60,22 @@ export async function scanPools() {
     });
   }
   out.sort((a, b) => b.score - a.score);
+  if (cfg.maxRange24h > 0) {
+    // check the top of the list only; each check is one OHLCV call
+    const end = Math.floor(Date.now() / 1000), start = end - 24 * 3600;
+    const kept = [];
+    for (const c of out.slice(0, 20)) {
+      try {
+        const r = await fetch(`${API}/pools/${c.address}/ohlcv?timeframe=1h&start_time=${start}&end_time=${end}`);
+        const bars = (await r.json()).data ?? [];
+        const hi = Math.max(...bars.map((b) => b.high)), lo = Math.min(...bars.map((b) => b.low));
+        c.range24h = lo > 0 ? hi / lo : 99;
+        if (c.range24h <= cfg.maxRange24h) kept.push(c);
+      } catch { /* unknown range: skip it */ }
+    }
+    log.info(`scan: volatility gate ${cfg.maxRange24h}x kept ${kept.length}/${Math.min(out.length, 20)}`);
+    return kept;
+  }
   log.info(`scan: ${data.length} pools → ${out.length} candidates; top: ${out.slice(0, 5).map((c) => `${c.symbol} ${c.score.toFixed(0)}`).join(', ')}`);
   return out;
 }

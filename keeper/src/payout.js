@@ -11,7 +11,7 @@ import { log } from './log.js';
  *   ops leg     — one transfer of `opsSol` to OPS_WALLET
  * `availableSol` caps what actually leaves the wallet this round (ops first, then holders).
  */
-export async function runPayout({ holderToken, wallet, holderSol, opsSol, availableSol, potBefore }) {
+export async function runPayout({ holderToken, wallet, holderSol, opsSol, availableSol, potBefore, solUsd = 0 }) {
   const out = { allocated: 0, paid: 0, opsPaid: 0, walletsPaid: 0, txCount: 0, holders: 0, payoutId: null };
   let budget = Math.max(0, availableSol);
 
@@ -40,7 +40,7 @@ export async function runPayout({ holderToken, wallet, holderSol, opsSol, availa
         out.walletsPaid = sim.length;
         out.txCount += Math.ceil(sim.length / cfg.transfersPerTx);
         log.info(`[dry-run] would allocate ${out.allocated.toFixed(6)} SOL to ${items.length} wallets and pay ${out.paid.toFixed(6)} SOL to ${sim.length}`);
-        out.payoutId = await ledger.recordPayout({ total_sol: out.paid, ops_sol: out.opsPaid, wallets: sim.length, tx_count: out.txCount, dry_run: true, pot_before: potBefore, holders_snapshot: holders.length }, sim.slice(0, 200).map((it) => ({ ...it, tx: null })));
+        out.payoutId = await ledger.recordPayout({ total_sol: out.paid, ops_sol: out.opsPaid, sol_usd: solUsd, wallets: sim.length, tx_count: out.txCount, dry_run: true, pot_before: potBefore, holders_snapshot: holders.length }, sim.slice(0, 200).map((it) => ({ ...it, tx: null })));
         return out;
       }
 
@@ -60,7 +60,7 @@ export async function runPayout({ holderToken, wallet, holderSol, opsSol, availa
       }
       out.walletsPaid = paidItems.length;
       out.txCount += txs.length;
-      out.payoutId = await ledger.recordPayout({ total_sol: out.paid, ops_sol: out.opsPaid, wallets: paidItems.length, tx_count: out.txCount, dry_run: false, pot_before: potBefore, holders_snapshot: holders.length }, paidItems);
+      out.payoutId = await ledger.recordPayout({ total_sol: out.paid, ops_sol: out.opsPaid, sol_usd: solUsd, wallets: paidItems.length, tx_count: out.txCount, dry_run: false, pot_before: potBefore, holders_snapshot: holders.length }, paidItems);
     }
   } else if (holderSol > 0) {
     log.warn('HOLDER_TOKEN_MINT not set — holder share stays in the pot');

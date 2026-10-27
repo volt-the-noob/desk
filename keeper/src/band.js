@@ -87,6 +87,8 @@ export class Band {
     if (!inRange && this.oorTicks >= cfg.outOfRangeTicks && cooled) {
       await this.closeAndBook(pos, price, 'rebalance', { reason: 'out of range', active: binId });
       await this.openBand(price, binId, null, 'rebalance');
+    } else if (cfg.dryRun && now() - this.s.lastHarvestAt >= cfg.harvestIntervalSec * 1000) {
+      await this.paperHarvest(inRange);
     } else if (now() - this.s.lastHarvestAt >= cfg.harvestIntervalSec * 1000 && pos.feesSol >= cfg.harvestMinSol) {
       await this.harvest(pos, price);
     }
@@ -168,6 +170,18 @@ export class Band {
     this.s.lastHarvestAt = now();
     await this.fund.book(kind, this, { solDelta: bandPnl + fees, bandPnl, fees, price, txs, detail: { x_out: pos.x, y_out: pos.y, cost_sol: sp?.costSol, lower: pos.lower, upper: pos.upper, ...extra } });
     if (!cfg.dryRun) await unwrapWsol(this.wallet).catch(() => {});
+  }
+
+  /** Dry run: estimate the fees a real band would have earned since the last harvest, from the pool's live 1h fee/TVL. */
+  async paperHarvest(inRange) {
+    const dt = (now() - (this.s.lastHarvestAt || this.s.openedAt)) / 3600e3;
+    this.s.lastHarvestAt = now();
+    const r1 = Number(this.s.lastRatio1h ?? 0);
+    if (!inRange || r1 <= 0) return;
+    const fees = this.s.capitalSol * (r1 / 100) * Math.min(dt, 1) * cfg.dryRunFeeCapture;
+    if (fees <= 0) return;
+    this.fund.onPaperFees(fees);
+    await this.fund.book('harvest', this, { solDelta: fees, fees, detail: { estimated: true, fee_tvl_1h: r1 } });
   }
 
   async harvest(pos, price) {

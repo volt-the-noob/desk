@@ -1,6 +1,6 @@
 import {
   Connection, Keypair, PublicKey, ComputeBudgetProgram, LAMPORTS_PER_SOL,
-  Transaction, SystemProgram,
+  Transaction, SystemProgram, VersionedTransaction,
 } from '@solana/web3.js';
 import {
   getAssociatedTokenAddressSync, createCloseAccountInstruction, NATIVE_MINT,
@@ -12,11 +12,14 @@ import { log } from './log.js';
 
 export const connection = new Connection(cfg.rpcUrl, { commitment: 'confirmed' });
 
-export function loadWallet() {
-  const s = cfg.walletSecret;
-  if (!s) throw new Error('WALLET_SECRET not set');
+export function loadKeypair(s) {
   const bytes = s.startsWith('[') ? Uint8Array.from(JSON.parse(s)) : bs58.decode(s);
   return Keypair.fromSecretKey(bytes);
+}
+
+export function loadWallet() {
+  if (!cfg.walletSecret) throw new Error('WALLET_SECRET not set');
+  return loadKeypair(cfg.walletSecret);
 }
 
 export const toSol = (lamports) => Number(lamports) / LAMPORTS_PER_SOL;
@@ -64,6 +67,35 @@ export async function sendTx(tx, signers, label = 'tx') {
     }
   }
   throw lastErr;
+}
+
+/** Sign + send a base64 VersionedTransaction (e.g. from Jupiter). */
+export async function sendVersioned(b64, signer, label = 'vtx') {
+  if (cfg.dryRun) { log.info(`[dry-run] would send ${label}`); return `dry-run-${label}-${Date.now()}`; }
+  const tx = VersionedTransaction.deserialize(Buffer.from(b64, 'base64'));
+  tx.sign([signer]);
+  const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  const conf = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+  if (conf.value.err) throw new Error(`${label} failed on-chain: ${JSON.stringify(conf.value.err)}`);
+  log.info(`${label} confirmed ${sig}`);
+  return sig;
+}
+
+let solUsdCache = { v: null, at: 0 };
+/** SOL/USD, cached 5 minutes. Jupiter first, CoinGecko as fallback. */
+export async function solUsd() {
+  if (Date.now() - solUsdCache.at < 300e3 && solUsdCache.v) return solUsdCache.v;
+  const SOLM = 'So11111111111111111111111111111111111111112';
+  try {
+    const j = await (await fetch(`https://lite-api.jup.ag/price/v3?ids=${SOLM}`)).json();
+    const v = Number(j?.[SOLM]?.usdPrice); if (v > 0) { solUsdCache = { v, at: Date.now() }; return v; }
+  } catch {}
+  try {
+    const j = await (await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd')).json();
+    const v = Number(j?.solana?.usd); if (v > 0) { solUsdCache = { v, at: Date.now() }; return v; }
+  } catch {}
+  return solUsdCache.v;
 }
 
 export async function sendAll(txs, signers, label) {

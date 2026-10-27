@@ -9,638 +9,206 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script>
-  // ---- edit these ----
-  window.DESK_CONFIG = {
-    SUPABASE_URL: 'https://YOUR-PROJECT.supabase.co',
-    SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
-    DESK_NAME: 'desk',           // DESK_NAME in the keeper env
-    TICKER: 'DESK',              // your token's ticker
-    X_URL: '',                   // e.g. https://x.com/yourhandle
-    CONTRACT_ADDRESS: '',        // pump.fun CA once live; shows "CA soon" until then
-    REFRESH_MS: 15000,
-  };
+window.DESK_CONFIG = {
+SUPABASE_URL: 'https://cyahngfggbiaycarjseg.supabase.co',
+SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5YWhuZ2ZnZ2JpYXljYXJqc2VnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MzcxNjksImV4cCI6MjA4ODMxMzE2OX0.JoqC9X6Bet3siC0iZ0PJe2lup2vWxfsROV5ncOTQEn4',
+DESK_NAME: 'desk',           // DESK_NAME in the keeper env
+TICKER: 'DESK',              // your token's ticker
+X_URL: '',                   // e.g. https://x.com/yourhandle
+CONTRACT_ADDRESS: '',        // pump.fun CA once live; shows "CA soon" until then
+RPC_URL: 'https://api.mainnet-beta.solana.com', // read-only, used by the wallet checker
+REFRESH_MS: 15000,
+};
 </script>
-<style>
-  :root {
-    color-scheme: light dark;
-    --paper: #F4F1EA; --paper-2: #ECE7DC; --panel: #FBF9F4;
-    --board: #141A1F; --board-2: #1C242B; --board-rule: rgba(244,241,234,.14); --board-ink: #F1EDE3; --board-ink-2: #A7AFB6;
-    --rule: rgba(20,26,31,.16); --rule-soft: rgba(20,26,31,.08);
-    --ink: #141A1F; --ink-2: #4F5A63; --ink-3: #8A939B;
-    --cobalt: #1B3FBF; --cobalt-2: #3B5BD9; --cobalt-soft: rgba(27,63,191,.12);
-    --saffron: #E8A33C; --saffron-2: #C9842A;
-    --green: #1E7A4A; --green-2: #4FB07C; --verm: #C8431F; --verm-2: #E86A47;
-    --serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
-    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-    box-sizing: border-box;
-    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #0F1316; --paper-2: #151B20; --panel: #141A1F;
-      --board: #0A0D10; --board-2: #12171C;
-      --rule: rgba(241,237,227,.16); --rule-soft: rgba(241,237,227,.08);
-      --ink: #F1EDE3; --ink-2: #B4ACA0; --ink-3: #7B7468;
-      --cobalt: #7D96F2; --cobalt-2: #9DB0F6; --cobalt-soft: rgba(125,150,242,.14);
-      --green: #4FB07C; --verm: #E86A47;
-    }
-  }
-  :root[data-theme="dark"] {
-    --paper: #0F1316; --paper-2: #151B20; --panel: #141A1F; --board: #0A0D10; --board-2: #12171C;
-    --rule: rgba(241,237,227,.16); --rule-soft: rgba(241,237,227,.08);
-    --ink: #F1EDE3; --ink-2: #B4ACA0; --ink-3: #7B7468;
-    --cobalt: #7D96F2; --cobalt-2: #9DB0F6; --cobalt-soft: rgba(125,150,242,.14); --green: #4FB07C; --verm: #E86A47;
-  }
-  * { box-sizing: inherit; }
-  html { scroll-behavior: smooth; scroll-padding-top: calc(60px + env(safe-area-inset-top, 0px)); }
-  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--serif); font-size: 19px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 31; background: var(--paper); }
-  a { color: inherit; }
-  .mono { font-family: var(--mono); }
-  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 28px; }
-  .tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--cobalt); border: 1px solid currentColor; padding: 4px 8px; margin-bottom: 18px; }
-  .board .tag { color: var(--saffron); }
-  h1, h2, h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; margin: 0; }
-  h2 { font-size: clamp(36px, 4.6vw, 58px); line-height: 1.02; }
-  h2 em, h1 em { font-style: italic; color: var(--cobalt); }
-  .board h2 em { color: var(--saffron); }
-  p { margin: 0 0 14px; }
-  .lede { font-size: 21px; line-height: 1.45; color: var(--ink-2); max-width: 60ch; }
-  .lede b { color: var(--ink); font-weight: 400; border-bottom: 2px solid var(--saffron); }
-  .pos { color: var(--green); } .neg { color: var(--verm); }
-  .board .pos { color: var(--green-2); } .board .neg { color: var(--verm-2); }
-
-  /* ---------- header ---------- */
-  header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; background: var(--paper); border-bottom: 1px solid var(--rule); }
-  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 20px; height: 60px; }
-  .logo { display: flex; align-items: baseline; gap: 10px; text-decoration: none; }
-  .logo .word { font-family: var(--serif); font-size: 30px; letter-spacing: -0.01em; line-height: 1; }
-  .logo .word i { color: var(--cobalt); font-style: italic; }
-  .logo small { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; color: var(--ink-3); text-transform: uppercase; }
-  nav.main { display: flex; gap: 20px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; }
-  nav.main a { text-decoration: none; color: var(--ink-2); }
-  nav.main a:hover { color: var(--cobalt); }
-  .live { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); position: relative; }
-  .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--green); animation: ring 1.8s ease-out infinite; }
-  .dot.off { background: var(--verm); } .dot.off::after { border-color: var(--verm); animation: none; }
-  .dot.dry { background: var(--saffron); } .dot.dry::after { border-color: var(--saffron); }
-  @keyframes ring { 0% { transform: scale(.6); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
-  @media (max-width: 900px) { nav.main { display: none; } }
-
-  /* ---------- ticker ---------- */
-  .ticker { background: var(--board); color: var(--board-ink); font-family: var(--mono); font-size: 12.5px; letter-spacing: .04em; height: 38px; overflow: hidden; position: relative; border-bottom: 1px solid var(--board-rule); }
-  .ticker .lane { display: flex; gap: 0; width: max-content; animation: marquee 48s linear infinite; }
-  .ticker:hover .lane { animation-play-state: paused; }
-  .ticker .item { display: inline-flex; align-items: center; gap: 12px; padding: 0 28px; height: 38px; border-right: 1px solid var(--board-rule); white-space: nowrap; }
-  .ticker .sym { color: var(--saffron); font-weight: 600; }
-  .ticker .dim { color: var(--board-ink-2); }
-  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-
-  /* ---------- buttons ---------- */
-  .btn { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; padding: 13px 18px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: transform .15s ease; }
-  .btn:hover { transform: translateY(-1px); }
-  .btn.ghost { background: transparent; color: var(--ink); }
-  .btn.cobalt { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
-  .ca { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; padding: 11px 14px; border: 1px dashed var(--ink-3); background: transparent; color: var(--ink); cursor: pointer; display: inline-flex; gap: 10px; align-items: center; }
-  .ca b { color: var(--cobalt); font-weight: 600; letter-spacing: .14em; }
-  .ca[disabled] { color: var(--ink-3); cursor: default; }
-  .ca.copied { background: var(--green); border-color: var(--green); border-style: solid; color: #fff; } .ca.copied b { color: #fff; }
-  :focus-visible { outline: 2px solid var(--cobalt-2); outline-offset: 3px; }
-
-  /* ---------- hero ---------- */
-  .hero { padding: 64px 0 56px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr); gap: 48px; align-items: end; }
-  .hero h1 { font-size: clamp(54px, 8.2vw, 124px); line-height: .94; letter-spacing: -0.025em; margin: 0 0 26px; }
-  .hero .defn { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 24px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
-  /* countdown ring */
-  .clock { justify-self: end; width: 100%; max-width: 360px; text-align: center; position: relative; }
-  .clock svg { width: 100%; height: auto; display: block; }
-  .clock .track { fill: none; stroke: var(--rule); stroke-width: 6; }
-  .clock .prog { fill: none; stroke: var(--cobalt); stroke-width: 6; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1s ease; }
-  .clock .tick { stroke: var(--rule); stroke-width: 1; }
-  .clock .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
-  .clock .mid .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); }
-  .clock .mid .v { font-family: var(--serif); font-size: clamp(40px, 4.4vw, 56px); line-height: 1; letter-spacing: -0.02em; }
-  .clock .mid .s { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
-  .clock .mid .s b { color: var(--cobalt); font-weight: 600; }
-  @media (max-width: 980px) { .hero { grid-template-columns: 1fr; gap: 36px; padding-top: 44px; } .clock { justify-self: start; max-width: 300px; } }
-
-  /* ---------- board (dark band) ---------- */
-  .board { background: var(--board); color: var(--board-ink); padding: 56px 0 60px; border-top: 1px solid var(--board-rule); border-bottom: 1px solid var(--board-rule); }
-  .board .lede { color: var(--board-ink-2); } .board .lede b { color: var(--board-ink); border-color: var(--saffron); }
-  .board-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 48px; align-items: start; }
-  .board-grid > div { min-width: 0; }
-  .aum .v { overflow-wrap: anywhere; }
-  .aum .k { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--board-ink-2); }
-  .aum .v { font-family: var(--serif); font-size: clamp(72px, 9vw, 136px); line-height: .95; letter-spacing: -0.03em; color: var(--saffron); margin: 8px 0 4px; }
-  .aum .v small { font-family: var(--mono); font-size: 14px; letter-spacing: .1em; color: var(--board-ink-2); margin-left: 10px; }
-  .aum .usd { font-family: var(--mono); font-size: 14px; color: var(--board-ink-2); }
-  .figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 30px; border-top: 1px solid var(--board-rule); }
-  .figs div { padding: 16px 16px 14px 0; border-right: 1px solid var(--board-rule); }
-  .figs div + div { padding-left: 16px; } .figs div:last-child { border-right: 0; }
-  .figs .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--board-ink-2); }
-  .figs .v { font-family: var(--serif); font-size: 32px; line-height: 1.1; margin-top: 4px; }
-  .chart svg { width: 100%; height: auto; display: block; }
-  .chart .line { fill: none; stroke: var(--saffron); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
-  .chart .area { fill: url(#gl); }
-  .chart .paid { fill: none; stroke: var(--cobalt-2); stroke-width: 1.8; }
-  .chart .axis { font-family: var(--mono); font-size: 10.5px; fill: var(--board-ink-2); letter-spacing: .08em; }
-  .chart .grid { stroke: var(--board-rule); stroke-dasharray: 2 6; }
-  .chart .last { fill: var(--saffron); }
-  .chart .last-ring { fill: none; stroke: var(--saffron); stroke-width: 1.5; animation: ring 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-  .legend { display: flex; gap: 22px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--board-ink-2); margin-top: 10px; }
-  .legend i { display: inline-block; width: 18px; height: 2px; vertical-align: middle; margin-right: 8px; background: var(--saffron); } .legend i.b { background: var(--cobalt-2); }
-  .chart .line, .chart .paid { stroke-dasharray: 3000; stroke-dashoffset: 3000; animation: draw 2.4s ease-out .3s forwards; }
-  @keyframes draw { to { stroke-dashoffset: 0; } }
-  @media (max-width: 980px) { .board-grid { grid-template-columns: 1fr; } .figs { grid-template-columns: repeat(3, minmax(0, 1fr)); } .figs .v { font-size: 26px; } }
-
-  /* ---------- positions ---------- */
-  section.block { padding: 84px 0 20px; }
-  section.block .head { max-width: 72ch; margin-bottom: 34px; }
-  .positions { border-top: 1px solid var(--rule); }
-  .position { display: grid; grid-template-columns: 170px minmax(0, 1fr) 220px; gap: 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--rule); }
-  .position .name { font-family: var(--serif); font-size: 34px; line-height: 1; text-decoration: none; }
-  .position .name small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-top: 6px; }
-  .position svg { width: 100%; height: 64px; display: block; overflow: visible; }
-  .position .axis { stroke: var(--rule); }
-  .position .floor { fill: var(--verm); opacity: .18; }
-  .position .band { fill: var(--cobalt-soft); stroke: var(--cobalt); stroke-width: 1.2; }
-  .position .band.out { fill: transparent; stroke-dasharray: 3 3; }
-  .position .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; fill: var(--ink-3); text-transform: uppercase; }
-  .position .entry { stroke: var(--ink); stroke-width: 1.2; }
-  .position .now { fill: var(--saffron); }
-  .position .now-ring { fill: none; stroke: var(--saffron); stroke-width: 1.5; animation: ring 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-  .position .now-lbl { font-family: var(--mono); font-size: 11px; font-weight: 600; fill: var(--ink); }
-  .position .figs2 { display: grid; grid-template-columns: 1fr 1fr 1fr; font-family: var(--mono); font-size: 13px; }
-  .position .figs2 span { display: block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 3px; }
-  .position .figs2 b { font-weight: 500; }
-  .position .state { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--cobalt); }
-  .position .state.out { color: var(--saffron-2); }
-  @media (max-width: 900px) { .position { grid-template-columns: 1fr; gap: 12px; } }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
-  .two > div, .scroll { min-width: 0; overflow-x: auto; }
-  @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
-  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
-  th, td { text-align: right; padding: 10px 0 10px 14px; border-bottom: 1px solid var(--rule-soft); white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; padding-left: 0; }
-  th { font-weight: 500; color: var(--ink-3); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
-  td a { text-decoration: none; color: var(--cobalt); }
-  .empty { color: var(--ink-3); font-family: var(--mono); font-size: 13px; }
-  .sub-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
-
-  /* ---------- blotter (dark) ---------- */
-  .blotter { background: var(--board-2); color: var(--board-ink); border: 1px solid var(--board-rule); font-family: var(--mono); font-size: 12.5px; line-height: 1.75; padding: 18px 20px; height: 360px; overflow: hidden; position: relative; display: flex; flex-direction: column; justify-content: flex-end; }
-  .blotter::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 80px; background: linear-gradient(180deg, var(--board-2), transparent); pointer-events: none; z-index: 1; }
-  .blotter .row { display: grid; grid-template-columns: 72px 92px 1fr; gap: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; animation: rise .5s ease forwards; }
-  .blotter .row.fresh { animation: flash 1.6s ease forwards; }
-  .blotter .t { color: var(--board-ink-2); }
-  .blotter .k { color: var(--saffron); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
-  .blotter .k.pay { color: var(--green-2); } .blotter .k.bad { color: var(--verm-2); }
-  .blotter .sym { color: var(--cobalt-2); }
-  .blotter .n { color: var(--board-ink-2); }
-  .blotter .cursor { display: inline-block; width: 8px; height: 14px; background: var(--saffron); vertical-align: -2px; animation: blink 1s steps(2) infinite; }
-  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @keyframes flash { 0% { opacity: 0; background: rgba(232,163,60,.35); } 30% { opacity: 1; } 100% { opacity: 1; background: transparent; } }
-  @keyframes blink { to { visibility: hidden; } }
-
-  /* ---------- mechanism (vertical rail) ---------- */
-  .rail { display: grid; grid-template-columns: 56px 1fr; gap: 0 28px; margin-top: 10px; }
-  .rail svg { width: 56px; height: 100%; min-height: 100%; display: block; overflow: visible; }
-  .rail .wire { stroke: var(--rule); stroke-width: 2; }
-  .rail .node { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
-  .rail .node.pot { fill: var(--saffron); stroke: var(--saffron); }
-  .rail .mover { fill: var(--saffron); } .rail .mover.sol { fill: var(--cobalt); }
-  .steps { display: grid; gap: 0; }
-  .step { display: grid; grid-template-columns: 1fr 1.6fr; gap: 24px; padding: 28px 0; border-bottom: 1px solid var(--rule); align-items: start; }
-  .step:last-child { border-bottom: 0; }
-  .step h3 { font-size: 34px; line-height: 1.05; }
-  .step h3 small { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--cobalt); margin-bottom: 8px; }
-  .step p { font-size: 19px; color: var(--ink-2); margin: 0; }
-  .step .split { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-  .step .split span { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; padding: 6px 10px; border: 1px solid var(--rule); }
-  .step .split span b { color: var(--cobalt); font-weight: 600; }
-  @media (max-width: 860px) { .step { grid-template-columns: 1fr; gap: 10px; } .rail { grid-template-columns: 1fr; } .rail svg { display: none; } }
-
-  /* ---------- wallet, prose, faq ---------- */
-  form.lookup { display: flex; gap: 8px; flex-wrap: wrap; }
-  form.lookup input { flex: 1 1 360px; font: 14px var(--mono); padding: 13px 14px; border: 1px solid var(--ink); background: var(--panel); color: var(--ink); }
-  #lookup-out { margin-top: 14px; font-family: var(--mono); font-size: 13px; }
-  .prose p { max-width: 64ch; }
-  details { border-top: 1px solid var(--rule-soft); padding: 16px 0; max-width: 76ch; }
-  details:last-of-type { border-bottom: 1px solid var(--rule-soft); }
-  summary { cursor: pointer; font-size: 24px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-  summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; font-family: var(--mono); color: var(--cobalt); transition: transform .25s; }
-  details[open] summary::after { transform: rotate(45deg); }
-  details p { margin: 10px 0 2px; color: var(--ink-2); font-size: 18px; max-width: 66ch; }
-  footer { border-top: 1px solid var(--rule); margin-top: 84px; padding: 28px 0 64px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
-  footer a { color: var(--ink-2); text-decoration: none; margin-right: 18px; }
-  footer .colophon { font-family: var(--serif); font-style: italic; font-size: 16px; letter-spacing: 0; text-transform: none; }
-
-  .hero > * { opacity: 0; animation: rise .7s ease forwards; } .hero > :nth-child(2) { animation-delay: .25s; }
-  @media (prefers-reduced-motion: reduce) { .hero > *, .blotter .row { animation: none; opacity: 1; } .chart .line, .chart .paid { stroke-dasharray: none; animation: none; } .dot::after, .now-ring, .last-ring, .rail .mover { display: none; } .ticker .lane { animation: none; } }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header class="top">
-  <div class="wrap">
-    <a class="logo" href="#top"><span class="word">DES<i>K</i></span><small>market-making fund</small></a>
-    <nav class="main" aria-label="Site">
-      <a href="#book">Book</a><a href="#positions">Positions</a><a href="#blotter">Blotter</a><a href="#how">How it pays</a><a href="#payouts">Payouts</a><a href="#about">About</a><a href="#faq">FAQ</a>
-      <a id="nav-x" href="#" target="_blank" rel="noopener" hidden>X ↗</a>
-    </nav>
-    <div class="live" id="status"><span class="dot dry"></span>connecting</div>
-  </div>
+<div class="wrap">
+<a class="logo" href="#top"><span class="word">DES<i>K</i></span><small>market-making fund</small></a>
+<nav class="main" aria-label="Site">
+<a href="#book">Book</a><a href="#stocks">Stocks</a><a href="#positions">Positions</a><a href="#blotter">Blotter</a><a href="#how">How it pays</a><a href="#payouts">Payouts</a><a href="#about">About</a><a href="#faq">FAQ</a>
+<a id="nav-x" href="#" target="_blank" rel="noopener" hidden>X ↗</a>
+</nav>
+<div class="live" id="status"><span class="dot dry"></span>connecting</div>
+</div>
 </header>
 <div class="ticker" aria-hidden="true"><div class="lane" id="lane"><span class="item dim">waiting for the keeper</span></div></div>
-
 <main class="wrap" id="top">
-  <section class="hero">
-    <div>
-      <p class="defn">desk, n. · the table a market maker sits at and lets the market come to it</p>
-      <h1>Every trade pays the desk. <em>The desk pays you.</em></h1>
-      <p class="lede">A market-making fund, issued as a token. The desk sits in the hottest Solana pools as concentrated liquidity, collects the fee on <b>every trade that crosses it</b>, and once a day splits the result: <b>half to holders in SOL</b>, 30% back into the book, 20% to OPS.</p>
-      <div class="actions">
-        <a class="btn" href="#book">See the live book</a>
-        <a class="btn ghost" href="#how">How it pays</a>
-        <button type="button" class="ca" id="ca"><b>CA</b> <span>soon</span></button>
-        <a class="btn cobalt" id="buy" href="#" target="_blank" rel="noopener" hidden>Buy on pump.fun ↗</a>
-      </div>
-    </div>
-    <div class="clock" aria-label="Time until the next payout">
-      <svg viewBox="0 0 320 320">
-        <g id="ticks"></g>
-        <circle class="track" cx="160" cy="160" r="140"/>
-        <circle class="prog" id="prog" cx="160" cy="160" r="140" stroke-dasharray="879.6" stroke-dashoffset="879.6"/>
-      </svg>
-      <div class="mid">
-        <div class="k">next payout in</div>
-        <div class="v" id="next-payout">—</div>
-        <div class="s">holders’ share now <b id="owed">—</b> SOL</div>
-      </div>
-    </div>
-  </section>
-</main>
-
-<section class="board" id="book">
-  <div class="wrap">
-    <div class="board-grid">
-      <div>
-        <span class="tag">The book · live</span>
-        <div class="aum">
-          <div class="k">desk equity</div>
-          <div class="v"><span id="aum">—</span><small>SOL</small></div>
-          <div class="usd" id="aum-usd"></div>
-        </div>
-        <div class="figs">
-          <div><div class="k">free</div><div class="v" id="free">—</div></div>
-          <div><div class="k">deployed</div><div class="v" id="deployed">—</div></div>
-          <div><div class="k">seats</div><div class="v" id="open">—</div></div>
-          <div><div class="k">fees earned</div><div class="v pos" id="fees">—</div></div>
-          <div><div class="k">band result</div><div class="v" id="band-pnl">—</div></div>
-          <div><div class="k">paid to holders</div><div class="v" id="paid">—</div></div>
-        </div>
-      </div>
-      <div>
-        <div class="chart" id="chart"></div>
-        <div class="legend"><span><i></i>desk equity</span><span><i class="b"></i>paid to holders, cumulative</span></div>
-      </div>
-    </div>
-  </div>
+<section class="hero">
+<div>
+<p class="defn">desk, n. · the table a market maker sits at and lets the market come to it</p>
+<h1>Every trade pays the desk. <em>The desk pays you.</em></h1>
+<p class="lede">A market-making fund, issued as a token. The desk trades <b>tokenized stocks against Wall Street’s own price</b>, runs liquidity on Solana’s busiest pools, collects the creator fee on every trade of the coin, and once a day splits the result: <b id="lede-split">half to holders in SOL</b><span id="lede-rest">, 30% back into the book, 20% to OPS</span>.</p>
+<div class="actions">
+<a class="btn" href="#book">See the live book</a>
+<a class="btn ghost" href="#how">How it pays</a>
+<button type="button" class="ca" id="ca"><b>CA</b> <span>soon</span></button>
+<a class="btn cobalt" id="buy" href="#" target="_blank" rel="noopener" hidden>Buy on pump.fun ↗</a>
+</div>
+</div>
+<div class="clock" aria-label="Time until the next payout">
+<svg viewBox="0 0 320 320">
+<g id="ticks"></g>
+<circle class="track" cx="160" cy="160" r="140"/>
+<circle class="prog" id="prog" cx="160" cy="160" r="140" stroke-dasharray="879.6" stroke-dashoffset="879.6"/>
+</svg>
+<div class="mid">
+<div class="k">next payout in</div>
+<div class="v" id="next-payout">—</div>
+<div class="s">holders’ share now <b id="owed">—</b> SOL</div>
+</div>
+</div>
 </section>
-
-<main class="wrap">
-  <section class="block" id="positions">
-    <div class="head">
-      <span class="tag">Positions · live</span>
-      <h2>Four seats. <em>Whoever’s hottest sits.</em></h2>
-      <p class="lede">Each row is a pool the desk is in right now: its floor, its band, and where price is. When the price marker leaves the band the keeper re-centers; when it hits the floor the seat is given up.</p>
-    </div>
-    <div class="positions" id="position-rows"></div>
-    <div class="two" style="margin-top:44px">
-      <div><p class="sub-tag">scanner’s shortlist</p><div id="candidates"></div></div>
-      <div><p class="sub-tag">seats given up recently</p><div id="closed"></div></div>
-    </div>
-  </section>
-
-  <section class="block" id="blotter">
-    <div class="head">
-      <span class="tag">Blotter · live</span>
-      <h2>Every action, <em>the moment it happens.</em></h2>
-      <p class="lede">Scans, entries, re-centers, harvests, exits, payouts. The keeper writes a line for each as it signs the transaction. New lines flash in.</p>
-    </div>
-    <div class="blotter" id="tape-box"><div class="row"><span class="t">--:--:--</span><span class="k">idle</span><span class="n">waiting for the keeper <span class="cursor"></span></span></div></div>
-  </section>
-
-  <section class="block" id="how">
-    <div class="head">
-      <span class="tag">How it pays</span>
-      <h2>No raise. No promise. <em>A fee, a pot, a clock.</em></h2>
-      <p class="lede">Nobody has to trust a treasury. The desk only pays what it realised on-chain, and it pays it on a clock you can watch.</p>
-    </div>
-    <div class="rail">
-      <svg viewBox="0 0 56 1000" preserveAspectRatio="none" aria-hidden="true">
-        <defs><path id="railpath" d="M 28 20 L 28 980"/></defs>
-        <use href="#railpath" class="wire"/>
-        <circle class="node" cx="28" cy="20" r="7"/><circle class="node" cx="28" cy="265" r="7"/><circle class="node" cx="28" cy="510" r="7"/><circle class="node pot" cx="28" cy="755" r="9"/>
-        <circle class="mover" r="4"><animateMotion dur="6s" repeatCount="indefinite" begin="0s"><mpath href="#railpath"/></animateMotion></circle>
-        <circle class="mover" r="4"><animateMotion dur="6s" repeatCount="indefinite" begin="2s"><mpath href="#railpath"/></animateMotion></circle>
-        <circle class="mover sol" r="5"><animateMotion dur="6s" repeatCount="indefinite" begin="4s"><mpath href="#railpath"/></animateMotion></circle>
-      </svg>
-      <div class="steps">
-        <div class="step"><h3><small>i · the seat</small>The desk sits down</h3><p>Every five minutes it ranks every SOL pool on Meteora by fees earned per dollar of liquidity, and puts a slice of capital in each of the best as a tight band around the live price.</p></div>
-        <div class="step"><h3><small>ii · the fee</small>Trades pay it</h3><p>Anyone buying or selling through the band pays the pool fee, 0.5 to 2 percent of what crosses. The desk never trades to move a price; it stands on one side of other people’s trades and keeps the fee.</p></div>
-        <div class="step"><h3><small>iii · the book</small>It books honestly</h3><p>When price leaves a band the desk re-centers and books both the fees and what its inventory gained or lost. When a pool cools or breaks its floor, the seat is closed and the token sold back to SOL. Nothing is counted the desk didn’t realise on-chain.</p></div>
-        <div class="step"><h3><small>iv · the clock</small>It pays the bearer</h3><p>Once a day the pot is split. A losing day carries forward; nobody is paid until the pot is positive again.</p><div class="split"><span><b>50%</b> holders · in SOL</span><span><b>30%</b> reserve · the book</span><span><b>20%</b> OPS</span></div></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="block" id="payouts">
-    <div class="head">
-      <span class="tag">Distributions</span>
-      <h2>Paid on the clock. <em>Every line checkable.</em></h2>
-    </div>
-    <div class="two">
-      <div><p class="sub-tag">payouts</p><div id="payout-table"></div></div>
-      <div><p class="sub-tag">daily results</p><div id="daily"></div></div>
-    </div>
-  </section>
-
-  <section class="block" id="wallet">
-    <div class="head">
-      <span class="tag">Your wallet</span>
-      <h2>What the desk owes <em>you.</em></h2>
-    </div>
-    <form class="lookup" id="lookup">
-      <input id="lookup-wallet" placeholder="paste a Solana address" autocomplete="off" spellcheck="false" aria-label="Wallet address">
-      <button type="submit" class="btn cobalt">Check</button>
-    </form>
-    <div id="lookup-out"></div>
-  </section>
-
-  <section class="block prose" id="about">
-    <div class="head">
-      <span class="tag">About</span>
-      <h2>Alpha is a story. <em>Fees are a business.</em></h2>
-    </div>
-    <p class="lede">Memecoin pools on Solana are the most expensive liquidity in crypto. On a hot day a pool pays its liquidity providers 20, 50, sometimes 70 percent of its own size in fees. That is the business the desk is in.</p>
-    <p class="lede">The desk is a keeper, running around the clock. It holds a tight band of SOL and a pool’s token around the live price, so most trades in that pool cross it and pay it. When price walks out of the band the desk picks the band up and sets it down again. When a pool cools, or its price falls through the floor, the desk closes the seat, sells the token back to SOL, and moves on.</p>
-    <p class="lede">It never trades the token that pays you, and it never trades to move a price. It is a liquidity provider, the same role a thousand wallets play on Raydium and Meteora every day, with one difference: the fees it collects don’t belong to a team. Once a day they are split, and the largest share goes in SOL to whoever holds the token at that moment.</p>
-    <p class="lede">Every seat it takes, every fee it harvests, every SOL it sends is a transaction you can open on Solscan. The ledger on this page is written by the same keeper that signs them.</p>
-  </section>
-
-  <section class="block" id="faq">
-    <div class="head">
-      <span class="tag">Questions</span>
-      <h2>Fair questions, <em>plain answers.</em></h2>
-    </div>
-    <details><summary>Do I have to do anything to get paid?</summary><p>No. Hold the token in a wallet you control. Each payout the desk snapshots every holder and sends SOL pro rata. Tokens on an exchange sit in the exchange’s wallet, so they don’t count.</p></details>
-    <details><summary>When are payouts?</summary><p>Every 24 hours, on the clock at the top of the page. If the pot is positive, it goes out. If it isn’t, nothing goes out and the clock resets.</p></details>
-    <details><summary>What is the split?</summary><p>50% of the pot to holders. 30% stays in the desk as capital so it can take bigger seats. 20% to OPS, the operations budget that keeps the keeper, the RPC and the site running.</p></details>
-    <details><summary>My payout was tiny, or didn’t come.</summary><p>Small amounts accrue instead of being sent, so gas doesn’t eat them. Your share adds up each payout and is sent once it crosses the dust floor. Paste your wallet above to see what has accrued.</p></details>
-    <details><summary>Does the desk trade the token?</summary><p>No. It never buys or sells the token to move its price or make volume, and it doesn’t market-make the token’s own pool unless that pool makes the scanner’s list on merit like any other.</p></details>
-    <details><summary>Where does the money actually come from?</summary><p>Fees paid by other people’s trades on Meteora pools where the desk provides liquidity, plus or minus what the desk’s inventory gained or lost while it sat in those pools. All of it is on-chain.</p></details>
-    <details><summary>What happens on a bad day?</summary><p>A pool that falls through its floor is closed and sold. A losing day makes the pot negative; the next profitable days fill the hole before anyone gets paid. The 30% reserve share is the cushion.</p></details>
-    <details><summary>Can the desk lose everything?</summary><p>It can lose a lot. Memecoin pools are the most volatile liquidity on Solana; the fees are high precisely because the risk is. Floors and position sizing limit the damage per seat. They don’t remove it.</p></details>
-  </section>
-
-  <footer>
-    <div><span id="foot-wallet"></span><span id="foot-token"></span><a href="https://app.meteora.ag" target="_blank" rel="noopener">meteora ↗</a><span id="foot-x"></span></div>
-    <div class="colophon">DESK · the first desk that pays the room</div>
-  </footer>
 </main>
-
-<script>
-(() => {
-  const C = window.DESK_CONFIG;
-  const $ = (id) => document.getElementById(id);
-  const H = { apikey: C.SUPABASE_ANON_KEY, Authorization: `Bearer ${C.SUPABASE_ANON_KEY}` };
-  const q = async (path) => { const r = await fetch(`${C.SUPABASE_URL}/rest/v1/${path}`, { headers: H }); if (!r.ok) throw new Error(`${r.status} ${path}`); return r.json(); };
-  const D = encodeURIComponent(C.DESK_NAME);
-  const n = (v, d = 4) => (v == null || isNaN(v) ? '—' : Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
-  const short = (a) => (a ? a.slice(0, 4) + '…' + a.slice(-4) : '');
-  const ago = (iso) => { if (!iso) return 'never'; const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? `${Math.round(s)}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`; };
-  const hms = (iso) => new Date(iso).toTimeString().slice(0, 8);
-  const txLink = (sig) => (sig && !sig.startsWith('dry-run') ? `<a href="https://solscan.io/tx/${sig}" target="_blank" rel="noopener">${short(sig)}</a>` : '—');
-  const cls = (v) => (Number(v) < 0 ? 'neg' : 'pos');
-  const sgn = (v, d = 4) => (Number(v) > 0 ? '+' : '') + n(v, d);
-  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let first = true, solUsd = null;
-
-  // clock ticks
-  $('ticks').innerHTML = Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * Math.PI * 2; const r1 = i % 4 === 0 ? 118 : 124, r2 = 130; return `<line class="tick" x1="${160 + r1 * Math.cos(a)}" y1="${160 + r1 * Math.sin(a)}" x2="${160 + r2 * Math.cos(a)}" y2="${160 + r2 * Math.sin(a)}"/>`; }).join('');
-
-  const counted = new Map();
-  function setNum(id, value, d = 4) {
-    const el = $(id); if (!el || value == null || isNaN(value)) return;
-    const from = counted.get(id) ?? 0; counted.set(id, value);
-    if (reduced || !first) { el.textContent = n(value, d); return; }
-    const t0 = performance.now(), dur = 1200;
-    (function step(t) { const k = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - k, 3); el.textContent = n(from + (value - from) * e, d); if (k < 1) requestAnimationFrame(step); })(t0);
-  }
-
-  if (C.X_URL) { const nx = $('nav-x'); nx.href = C.X_URL; nx.hidden = false; $('foot-x').innerHTML = `<a href="${esc(C.X_URL)}" target="_blank" rel="noopener">x ↗</a>`; }
-  const caBtn = $('ca');
-  if (C.CONTRACT_ADDRESS) {
-    const label = () => `<b>CA</b> <span>${short(C.CONTRACT_ADDRESS)}</span> <span>copy</span>`;
-    caBtn.innerHTML = label(); caBtn.title = C.CONTRACT_ADDRESS;
-    caBtn.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(C.CONTRACT_ADDRESS); } catch { prompt('Contract address', C.CONTRACT_ADDRESS); }
-      caBtn.classList.add('copied'); caBtn.innerHTML = '<b>CA</b> <span>copied</span>';
-      setTimeout(() => { caBtn.classList.remove('copied'); caBtn.innerHTML = label(); }, 1600);
-    });
-    const buy = $('buy'); buy.href = `https://pump.fun/coin/${C.CONTRACT_ADDRESS}`; buy.hidden = false;
-  } else { caBtn.disabled = true; }
-
-  async function solPrice() { try { const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'); const j = await r.json(); solUsd = j.solana?.usd ?? null; } catch { solUsd = null; } }
-
-  let openPools = [];
-  async function loadState() {
-    const [st] = await q(`desk_state?id=eq.${D}&select=*`);
-    if (!st) { $('status').innerHTML = '<span class="dot off"></span>no ledger yet'; return; }
-    const cfg = st.config || {};
-    const stale = st.last_tick_at && Date.now() - Date.parse(st.last_tick_at) > 180000;
-    const dot = st.dry_run ? 'dry' : st.status !== 'running' || stale ? 'off' : '';
-    const label = st.dry_run ? 'dry run' : st.status === 'running' ? (stale ? 'stalled' : 'desk · live') : st.status;
-    $('status').innerHTML = `<span class="dot ${dot}"></span>${esc(label)}`;
-
-    const equity = Number(st.equity_sol);
-    setNum('aum', equity, 2);
-    $('aum-usd').textContent = solUsd ? `≈ $${n(equity * solUsd, 0)} · SOL at $${n(solUsd, 0)}` : '';
-    const hs = (cfg.holder_share_pct ?? 50) / 100;
-    setNum('owed', hs * Math.max(Number(st.pot_sol), 0), 4);
-    // countdown ring
-    const interval = (cfg.payout_interval_hours ?? 24) * 3600e3;
-    const last = st.last_payout_at ? Date.parse(st.last_payout_at) : Date.now();
-    const next = st.next_payout_at ? Date.parse(st.next_payout_at) : last + interval;
-    const left = Math.max(0, next - Date.now());
-    const frac = Math.min(1, Math.max(0, 1 - left / interval));
-    $('prog').style.strokeDashoffset = (879.6 * (1 - frac)).toFixed(1);
-    $('next-payout').textContent = left <= 0 ? 'now' : `${Math.floor(left / 3600e3)}h ${String(Math.floor((left % 3600e3) / 60e3)).padStart(2, '0')}m`;
-    setNum('paid', Number(st.paid_total_sol), 3);
-    setNum('free', Number(st.free_sol), 2);
-    setNum('deployed', Number(st.deployed_sol), 2);
-    $('open').textContent = `${st.open_pools ?? 0} / ${cfg.max_pools ?? 4}`;
-    setNum('fees', Number(st.fees_total_sol), 3);
-    const bp = $('band-pnl'); setNum('band-pnl', Number(st.band_pnl_total_sol), 3); bp.className = 'v ' + cls(st.band_pnl_total_sol);
-    $('foot-wallet').innerHTML = st.wallet ? `<a href="https://solscan.io/account/${esc(st.wallet)}" target="_blank" rel="noopener">desk wallet ${short(st.wallet)} ↗</a>` : '';
-    $('foot-token').innerHTML = st.holder_token_mint ? `<a href="https://solscan.io/token/${esc(st.holder_token_mint)}" target="_blank" rel="noopener">token ↗</a>` : '';
-
-    const cands = Array.isArray(st.candidates) ? st.candidates : [];
-    $('candidates').innerHTML = cands.length
-      ? `<table><thead><tr><th>Pool</th><th>Fee÷liq 1h</th><th>24h</th><th>Liquidity</th><th>Vol 24h</th></tr></thead><tbody>` +
-        cands.map((c) => `<tr><td><a href="https://app.meteora.ag/dlmm/${esc(c.pool)}" target="_blank" rel="noopener">${esc(c.symbol)}</a></td><td>${n(c.fee_tvl_1h, 2)}%</td><td>${n(c.fee_tvl_24h, 1)}%</td><td>$${n(c.tvl, 0)}</td><td>$${n(c.vol24, 0)}</td></tr>`).join('') + `</tbody></table>`
-      : '<p class="empty">No scan yet.</p>';
-  }
-
-  function ticker() {
-    const items = openPools.length
-      ? openPools.map((p) => { const chg = p.entry_price && p.last_price ? (Number(p.last_price) / Number(p.entry_price) - 1) * 100 : null;
-          return `<span class="item"><span class="sym">${esc(p.symbol)}</span><span>fees <span class="pos">${n(p.fees_sol, 3)}</span></span><span>band <span class="${cls(p.band_pnl_sol)}">${sgn(p.band_pnl_sol, 3)}</span></span><span class="${cls(chg ?? 0)}">${chg == null ? '' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(chg).toFixed(1) + '%'}</span><span class="dim">${n(p.capital_sol, 1)} SOL</span></span>`; })
-      : [`<span class="item dim">no seats taken · scanner runs every 5 minutes</span>`];
-    const html = items.join('');
-    $('lane').innerHTML = html + html; // two copies for a seamless loop
-  }
-
-  async function loadChart() {
-    const rows = await q(`equity_snapshots?desk=eq.${D}&select=ts,equity_sol,paid_total_sol&order=ts.asc&limit=1000`);
-    const W = 820, Hh = 300, padL = 10, padR = 70, padT = 20, padB = 26;
-    const defs = `<defs><linearGradient id="gl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E8A33C" stop-opacity=".35"/><stop offset="1" stop-color="#E8A33C" stop-opacity="0"/></linearGradient></defs>`;
-    if (rows.length < 2) { $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${Hh}">${defs}<line class="grid" x1="0" y1="${Hh - padB}" x2="${W}" y2="${Hh - padB}"/><text class="axis" x="${padL}" y="${Hh - 8}">equity history appears after the first hour</text></svg>`; return; }
-    const t0 = Date.parse(rows[0].ts), t1 = Date.parse(rows[rows.length - 1].ts) || t0 + 1;
-    const eq = rows.map((r) => Number(r.equity_sol)), pd = rows.map((r) => Number(r.paid_total_sol));
-    const lo = Math.min(...eq) * 0.985, hi = Math.max(...eq) * 1.01 || 1;
-    const phi = Math.max(...pd, 0.0001) * 1.15;
-    const X = (t) => padL + ((Date.parse(t) - t0) / (t1 - t0)) * (W - padL - padR);
-    const Y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (Hh - padT - padB);
-    const Yp = (v) => padT + (1 - v / phi) * (Hh - padT - padB);
-    const line = (vals, Yf) => rows.map((r, i) => `${i ? 'L' : 'M'}${X(r.ts).toFixed(1)},${Yf(vals[i]).toFixed(1)}`).join(' ');
-    const eqPath = line(eq, Y);
-    const lx = X(rows[rows.length - 1].ts), ly = Y(eq[eq.length - 1]);
-    const area = `${eqPath} L${lx.toFixed(1)},${Hh - padB} L${X(rows[0].ts).toFixed(1)},${Hh - padB} Z`;
-    const d = (t) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const gy = [0.25, 0.5, 0.75].map((f) => { const y = padT + f * (Hh - padT - padB); return `<line class="grid" x1="0" x2="${W - padR}" y1="${y}" y2="${y}"/>`; }).join('');
-    $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" aria-label="Desk equity over time">${defs}${gy}<path class="area" d="${area}"/><path class="paid" d="${line(pd, Yp)}"/><path class="line" d="${eqPath}"/>
-      <circle class="last-ring" cx="${lx}" cy="${ly}" r="7"/><circle class="last" cx="${lx}" cy="${ly}" r="3.5"/>
-      <text class="axis" x="${lx + 12}" y="${ly + 4}">${n(eq[eq.length - 1], 2)}</text>
-      <text class="axis" x="${padL}" y="${Hh - 6}">${d(rows[0].ts)}</text><text class="axis" x="${W - padR}" y="${Hh - 6}" text-anchor="end">${d(rows[rows.length - 1].ts)}</text>
-      <text class="axis" x="${lx + 12}" y="${Yp(pd[pd.length - 1]) + 4}" fill="var(--cobalt-2)">paid ${n(pd[pd.length - 1], 2)}</text></svg>`;
-  }
-
-  let seen = new Set();
-  async function loadTape() {
-    const rows = await q(`desk_events?desk=eq.${D}&kind=neq.error&order=id.desc&limit=40`);
-    const list = rows.slice().reverse();
-    if (!list.length) return;
-    const fmt = (e) => {
-      const d = e.detail || {}; const sym = d.symbol ? `<span class="sym">${esc(d.symbol)}</span> ` : '';
-      const m = (k, v) => (v == null ? '' : ` · <span class="n">${k}</span> <span class="${cls(v)}">${sgn(v)}</span>`);
-      const K = (t, c = '') => `<span class="k ${c}">${t}</span>`;
-      switch (e.kind) {
-        case 'boot': return [K('boot'), `keeper up${d.dry_run ? ' · dry run' : ''}`];
-        case 'scan': return [K('scan'), (d.candidates || []).slice(0, 5).map((c) => `${esc(c.symbol)} <span class="n">${c.score}</span>`).join(' · ') || 'no candidates'];
-        case 'pool-enter': return [K('enter'), `${sym}band ${d.lower}…${d.upper} · <span class="n">capital</span> ${n(d.capital_sol, 2)} SOL`];
-        case 'rebalance': return [K('close'), `${sym}out of range${m('band', d.band_pnl_sol)}${m('fees', d.fees_sol)}`];
-        case 'rebalance-open': return [K('re-center'), `${sym}band ${d.lower}…${d.upper}`];
-        case 'harvest': return [K('harvest'), `${sym}${m('fees', d.fees_sol)}`];
-        case 'pool-exit': return [K('exit', 'bad'), `${sym}${esc(d.reason)}${m('band', d.band_pnl_sol)}${m('fees', d.fees_sol)}`];
-        case 'floor': return [K('floor', 'bad'), `${sym}sold ${n(d.sold_x, 0)} for ${n(d.sold_sol, 3)} SOL`];
-        case 'exit-sell': return [K('sell'), `${sym}inventory → ${n(d.sold_sol, 3)} SOL`];
-        case 'payout': return [K('payout', 'pay'), `holders <span class="pos">${n(d.holders_paid_sol, 3)}</span> SOL to ${d.wallets} wallets · ops ${n(d.ops_sol, 3)} · reserve ${n(d.reserve_sol, 3)}`];
-        case 'payout-skipped': return [K('payout'), `skipped · pot ${n(d.pot, 3)} SOL`];
-        default: return [K(esc(e.kind)), ''];
-      }
-    };
-    const box = $('tape-box');
-    const fresh = !first;
-    const html = list.map((e, i) => { const [k, t] = fmt(e); const isNew = fresh && !seen.has(e.id); return `<div class="row ${isNew ? 'fresh' : ''}" style="animation-delay:${first ? Math.min(i * 35, 1200) : 0}ms"><span class="t">${hms(e.ts)}</span>${k}<span>${t}</span></div>`; }).join('');
-    if (list.some((e) => !seen.has(e.id))) { box.innerHTML = html + `<div class="row" style="animation-delay:${first ? 1300 : 0}ms"><span class="t"></span><span></span><span><span class="cursor"></span></span></div>`; }
-    seen = new Set(list.map((e) => e.id));
-  }
-
-  async function loadPools() {
-    openPools = await q(`desk_pools?desk=eq.${D}&status=eq.open&order=opened_at.desc`);
-    ticker();
-    const W = 600, cx = 30, cw = W - 60;
-    $('position-rows').innerHTML = openPools.length ? openPools.map((p) => {
-      const entry = Number(p.entry_price), lastp = Number(p.last_price || p.entry_price);
-      const chg = entry ? lastp / entry - 1 : 0;
-      const flPct = entry && p.floor_price ? Number(p.floor_price) / entry - 1 : -0.35;
-      const step = 1 + (p.bin_step ?? 50) / 10000;
-      const half = p.position_lower != null && p.position_upper != null ? (p.position_upper - p.position_lower) / 2 : 20;
-      const bLo = Math.pow(step, -half) - 1, bHi = Math.pow(step, half) - 1; // band relative to entry (centered at open)
-      const lo = Math.min(flPct, -0.45), hi = 0.6;
-      const X = (v) => cx + ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * cw;
-      const out = chg < bLo || chg > bHi;
-      return `<div class="position">
-        <a class="name" href="https://app.meteora.ag/dlmm/${esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<small>opened ${ago(p.opened_at)} · ${n(p.capital_sol, 2)} SOL</small></a>
-        <svg viewBox="0 0 ${W} 64" preserveAspectRatio="none" aria-label="${esc(p.symbol)} band">
-          <line class="axis" x1="${cx}" x2="${cx + cw}" y1="40" y2="40"/>
-          <rect class="floor" x="${cx}" y="30" width="${X(flPct) - cx}" height="20"/>
-          <rect class="band ${out ? 'out' : ''}" x="${X(bLo)}" y="28" width="${X(bHi) - X(bLo)}" height="24"/>
-          <line class="entry" x1="${X(0)}" x2="${X(0)}" y1="24" y2="56"/>
-          <text class="lbl" x="${cx}" y="16">floor ${(flPct * 100).toFixed(0)}%</text>
-          <text class="lbl" x="${X(0)}" y="16" text-anchor="middle">entry</text>
-          <text class="lbl" x="${cx + cw}" y="16" text-anchor="end">+60%</text>
-          <circle class="now-ring" cx="${X(chg)}" cy="40" r="9"/><circle class="now" cx="${X(chg)}" cy="40" r="5"/>
-          <text class="now-lbl" x="${X(chg)}" y="63" text-anchor="middle">${(chg >= 0 ? '+' : '') + (chg * 100).toFixed(1)}%</text>
-        </svg>
-        <div><div class="figs2"><div><span>fees</span><b class="pos">${n(p.fees_sol, 3)}</b></div><div><span>band</span><b class="${cls(p.band_pnl_sol)}">${sgn(p.band_pnl_sol, 3)}</b></div><div><span>net</span><b class="${cls(Number(p.fees_sol) + Number(p.band_pnl_sol))}">${sgn(Number(p.fees_sol) + Number(p.band_pnl_sol), 3)}</b></div></div>
-        <div class="state ${out ? 'out' : ''}" style="margin-top:8px">${out ? 'out of band · re-centering' : 'in band · earning'}</div></div>
-      </div>`;
-    }).join('') : '<p class="empty" style="padding:18px 0">No seats taken. The desk opens seats on its next scan when it has capital to deploy.</p>';
-
-    const closed = await q(`desk_pools?desk=eq.${D}&status=eq.closed&order=closed_at.desc&limit=8`);
-    $('closed').innerHTML = closed.length
-      ? `<table><thead><tr><th>Pool</th><th>Why</th><th>Fees</th><th>Band</th><th>Net</th><th>Held</th></tr></thead><tbody>` +
-        closed.map((p) => { const net = Number(p.fees_sol) + Number(p.band_pnl_sol); const held = p.opened_at && p.closed_at ? Math.round((Date.parse(p.closed_at) - Date.parse(p.opened_at)) / 3600e3) : null;
-          return `<tr><td>${esc(p.symbol)}</td><td>${esc(p.exit_reason ?? '—')}</td><td class="pos">${n(p.fees_sol, 3)}</td><td class="${cls(p.band_pnl_sol)}">${n(p.band_pnl_sol, 3)}</td><td class="${cls(net)}">${sgn(net, 3)}</td><td>${held == null ? '—' : held + 'h'}</td></tr>`; }).join('') + `</tbody></table>`
-      : '<p class="empty">Nothing closed yet.</p>';
-  }
-
-  async function loadDaily() {
-    const rows = await q(`daily_results?desk=eq.${D}&order=day.desc&limit=14`);
-    $('daily').innerHTML = rows.length
-      ? `<table><thead><tr><th>Day</th><th>Fees</th><th>Band</th><th>Holders</th><th>OPS</th><th>In/out</th></tr></thead><tbody>` +
-        rows.map((r) => `<tr><td>${r.day}</td><td class="pos">${n(r.fees_sol, 3)}</td><td class="${cls(r.band_pnl_sol)}">${n(r.band_pnl_sol, 3)}</td><td>${n(r.paid_sol, 3)}</td><td>${n(r.ops_sol, 3)}</td><td>${r.pools_entered}/${r.pools_exited}</td></tr>`).join('') + `</tbody></table>`
-      : '<p class="empty">Nothing booked yet.</p>';
-  }
-
-  async function loadPayouts() {
-    const rows = await q(`payouts?desk=eq.${D}&order=ts.desc&limit=14`);
-    $('payout-table').innerHTML = rows.length
-      ? `<table><thead><tr><th>When</th><th>Holders SOL</th><th>OPS SOL</th><th>Wallets</th><th>Tx</th></tr></thead><tbody>` +
-        rows.map((r) => `<tr><td>${new Date(r.ts).toLocaleString()}${r.dry_run ? ' · sim' : ''}</td><td>${n(r.total_sol)}</td><td>${n(r.ops_sol)}</td><td>${r.wallets}</td><td>${r.tx_count}</td></tr>`).join('') + `</tbody></table>`
-      : '<p class="empty">No payouts yet. The first goes out at the end of the first 24h with a positive pot.</p>';
-  }
-
-  $('lookup').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const w = $('lookup-wallet').value.trim();
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w)) { $('lookup-out').innerHTML = '<p class="empty">That doesn’t look like a Solana address.</p>'; return; }
-    $('lookup-out').innerHTML = '<p class="empty">Looking…</p>';
-    try {
-      const [owed] = await q(`wallet_owed?desk=eq.${D}&wallet=eq.${w}&select=owed_sol,paid_sol`);
-      const items = await q(`payout_items?wallet=eq.${w}&select=amount_sol,tx,payouts(ts)&order=id.desc&limit=20`);
-      let html = `<p>accrued, waiting for the dust floor: <b class="pos">${n(owed?.owed_sol ?? 0)} SOL</b> · paid so far: <b>${n(owed?.paid_sol ?? 0)} SOL</b></p>`;
-      if (items.length) html += `<div class="scroll"><table><thead><tr><th>When</th><th>SOL</th><th>Tx</th></tr></thead><tbody>` + items.map((it) => `<tr><td>${it.payouts ? new Date(it.payouts.ts).toLocaleString() : '—'}</td><td>${n(it.amount_sol)}</td><td>${txLink(it.tx)}</td></tr>`).join('') + `</tbody></table></div>`;
-      else if (!owed) html = `<p class="empty">This wallet hasn’t been in a snapshot yet. Hold ${esc(C.TICKER)} when the next payout fires and it will be.</p>`;
-      $('lookup-out').innerHTML = html;
-    } catch (err) { $('lookup-out').innerHTML = `<p class="empty">Lookup failed: ${esc(err.message)}</p>`; }
-  });
-
-  async function refresh() {
-    try { await Promise.all([loadState(), loadTape(), loadPools(), loadDaily(), loadPayouts()]); if (first) await loadChart(); }
-    catch (e) { $('status').innerHTML = `<span class="dot off"></span>ledger unreachable`; console.warn(e); }
-    first = false;
-  }
-  solPrice().then(refresh);
-  setInterval(refresh, C.REFRESH_MS);
-  setInterval(solPrice, 300000);
-})();
-</script>
+<section class="board" id="book">
+<div class="wrap">
+<div class="board-grid">
+<div>
+<span class="tag">The book · live</span>
+<div class="aum">
+<div class="k">desk equity</div>
+<div class="v"><span id="aum">—</span><small>SOL</small></div>
+<div class="usd" id="aum-usd"></div>
+</div>
+</div>
+<div>
+<div class="chart" id="chart"></div>
+<div class="legend"><span><i></i>desk equity</span><span><i class="b"></i>paid to holders, cumulative</span></div>
+</div>
+</div>
+<div class="figs">
+<div><div class="k">portfolio worth</div><div class="v" id="worth">—</div><div class="u" id="worth-usd"></div></div>
+<div><div class="k">total profit</div><div class="v" id="profit">—</div><div class="u" id="profit-usd"></div></div>
+<div><div class="k">sent to holders</div><div class="v" id="paid">—</div><div class="u" id="paid-usd"></div></div>
+<div><div class="k">fees earned</div><div class="v pos" id="fees">—</div><div class="u">from trades</div></div>
+<div><div class="k">band result</div><div class="v" id="band-pnl">—</div><div class="u">inventory gain/loss</div></div>
+<div><div class="k">sent to OPS</div><div class="v" id="ops-paid">—</div><div class="u" id="ops-usd"></div></div>
+<div class="bb"><div class="k">bought back</div><div class="v" id="bb-sol">—</div><div class="u" id="bb-usd"></div></div>
+<div class="bb"><div class="k">burned</div><div class="v" id="burned">—</div><div class="u" id="burned-k">tokens</div></div>
+<div><div class="k">holders</div><div class="v" id="holders">—</div><div class="u">eligible wallets</div></div>
+<div><div class="k">free · deployed</div><div class="v" id="free-dep">—</div><div class="u">SOL</div></div>
+<div><div class="k">seats</div><div class="v" id="open">—</div><div class="u">open / target</div></div>
+<div><div class="k">creator-fee income</div><div class="v pos" id="income">—</div><div class="u" id="income-usd"></div></div>
+<div><div class="k">stock desk P&amp;L</div><div class="v" id="stock-pnl">—</div><div class="u" id="stock-pnl-k">USD, realised</div></div>
+<div><div class="k">return on start</div><div class="v" id="roi">—</div><div class="u" id="roi-k">since launch</div></div>
+</div>
+</div>
+</section>
+<main class="wrap">
+<section class="block" id="stocks">
+<div class="head">
+<span class="tag">Stock desk · <span id="stk-mode">—</span></span>
+<h2>Wall Street sets the price. <em>The desk trades the gap.</em></h2>
+<p class="lede">NVDA, SPY, TSLA and AAPL trade on Solana as tokens backed one-to-one by real shares. When a pool drifts away from its usual level against the real stock, the desk sells into it or buys from it, and closes the trade when the gap is gone. Same shares as before, more USDC.</p>
+</div>
+<div class="mkt" id="stk-status"><span class="dot off"></span><span>waiting for the keeper</span></div>
+<div class="stk-figs">
+<div><div class="k">book value</div><div class="v" id="stk-book">—</div><div class="u">USDC + shares at the real price</div></div>
+<div><div class="k">realised P&amp;L</div><div class="v" id="stk-real">—</div><div class="u" id="stk-real-k">USD</div></div>
+<div><div class="k">trades</div><div class="v" id="stk-trades">—</div><div class="u" id="stk-clip">per trade</div></div>
+<div><div class="k">open now</div><div class="v" id="stk-open">—</div><div class="u">closed when the gap is gone</div></div>
+</div>
+<div class="scroll"><table class="stk"><thead><tr><th>Stock</th><th>Real price</th><th>Pool bid</th><th>Pool ask</th><th>Usual</th><th>Now</th><th>Gap vs usual</th><th>Desk</th></tr></thead><tbody id="stk-board"><tr><td colspan="8" class="empty">No prices yet.</td></tr></tbody></table></div>
+<p class="sub-tag" style="margin-top:34px">recent stock trades</p>
+<div id="stk-trades-table"></div>
+</section>
+<section class="block" id="positions">
+<div class="head">
+<span class="tag">Positions · live</span>
+<h2><span id="seat-word">Up to eight</span> seats. <em>Whoever’s hottest sits.</em></h2>
+<p class="lede">Each row is a pool the desk is in right now: its floor, its band, and where price is. When the price marker leaves the band the keeper re-centers; when it hits the floor the seat is given up.</p>
+</div>
+<div class="soon" id="pools-soon" hidden></div>
+<div class="positions" id="position-rows"></div>
+<div class="two" style="margin-top:44px">
+<div><p class="sub-tag">scanner’s shortlist</p><div id="candidates"></div></div>
+<div><p class="sub-tag">seats given up recently</p><div id="closed"></div></div>
+</div>
+</section>
+<section class="block" id="blotter">
+<div class="head">
+<span class="tag">Blotter · live</span>
+<h2>Every action, <em>the moment it happens.</em></h2>
+<p class="lede">Scans, entries, re-centers, harvests, exits, payouts. The keeper writes a line for each as it signs the transaction. New lines flash in.</p>
+</div>
+<div class="blotter" id="tape-box"><div class="row"><span class="t">--:--:--</span><span class="k">idle</span><span class="n">waiting for the keeper <span class="cursor"></span></span></div></div>
+</section>
+<section class="block" id="how">
+<div class="head">
+<span class="tag">How it pays</span>
+<h2>No raise. No promise. <em>A fee, a pot, a clock.</em></h2>
+<p class="lede">Nobody has to trust a treasury. The desk only pays what it realised on-chain, and it pays it on a clock you can watch.</p>
+</div>
+<div class="rail">
+<svg viewBox="0 0 56 1000" preserveAspectRatio="none" aria-hidden="true">
+<defs><path id="railpath" d="M 28 20 L 28 980"/></defs>
+<use href="#railpath" class="wire"/>
+<circle class="node" cx="28" cy="20" r="7"/><circle class="node" cx="28" cy="265" r="7"/><circle class="node" cx="28" cy="510" r="7"/><circle class="node pot" cx="28" cy="755" r="9"/>
+<circle class="mover" r="4"><animateMotion dur="6s" repeatCount="indefinite" begin="0s"><mpath href="#railpath"/></animateMotion></circle>
+<circle class="mover" r="4"><animateMotion dur="6s" repeatCount="indefinite" begin="2s"><mpath href="#railpath"/></animateMotion></circle>
+<circle class="mover sol" r="5"><animateMotion dur="6s" repeatCount="indefinite" begin="4s"><mpath href="#railpath"/></animateMotion></circle>
+</svg>
+<div class="steps">
+<div class="step"><h3><small>i · the seat</small>The desk sits down</h3><p>Every five minutes it ranks every SOL pool on Meteora by fees earned per dollar of liquidity, and puts a slice of capital in each of the best as a tight band around the live price.</p></div>
+<div class="step"><h3><small>ii · the fee</small>Trades pay it</h3><p>Anyone buying or selling through the band pays the pool fee, 0.5 to 2 percent of what crosses. The desk never trades to move a price; it stands on one side of other people’s trades and keeps the fee.</p></div>
+<div class="step"><h3><small>iii · the book</small>It books honestly</h3><p>When price leaves a band the desk re-centers and books both the fees and what its inventory gained or lost. When a pool cools or breaks its floor, the seat is closed and the token sold back to SOL. Nothing is counted the desk didn’t realise on-chain.</p></div>
+<div class="step"><h3><small>iv · the clock</small>It pays the bearer</h3><p>Once a day the pot is split. A losing day carries forward; nobody is paid until the pot is positive again.</p><div class="split" id="split-chips"><span><b>50%</b> holders · in SOL</span><span><b>30%</b> reserve · the book</span><span><b>20%</b> OPS</span></div></div>
+</div>
+</div>
+</section>
+<section class="block" id="payouts">
+<div class="head">
+<span class="tag">Distributions</span>
+<h2>Paid on the clock. <em>Every line checkable.</em></h2>
+</div>
+<div class="two">
+<div><p class="sub-tag">payouts</p><div id="payout-table"></div></div>
+<div><p class="sub-tag">daily results</p><div id="daily"></div></div>
+</div>
+</section>
+<section class="block" id="wallet">
+<div class="head">
+<span class="tag">Your wallet</span>
+<h2>What the desk owes <em>you.</em></h2>
+<p class="lede">Paste any address. Nothing to connect, nothing to sign: the balance is read straight from Solana, the rest from the desk’s public ledger.</p>
+</div>
+<form class="lookup" id="lookup">
+<input id="lookup-wallet" placeholder="paste a Solana address" autocomplete="off" spellcheck="false" aria-label="Wallet address">
+<button type="submit" class="btn cobalt">Check</button>
+</form>
+<div id="lookup-out"></div>
+</section>
+<section class="block prose" id="about">
+<div class="head">
+<span class="tag">About</span>
+<h2>Alpha is a story. <em>Fees are a business.</em></h2>
+</div>
+<p class="lede">Memecoin pools on Solana are the most expensive liquidity in crypto. On a hot day a pool pays its liquidity providers 20, 50, sometimes 70 percent of its own size in fees. That is the business the desk is in.</p>
+<p class="lede">The desk is a keeper, running around the clock. It holds a tight band of SOL and a pool’s token around the live price, so most trades in that pool cross it and pay it. When price walks out of the band the desk picks the band up and sets it down again. When a pool cools, or its price falls through the floor, the desk closes the seat, sells the token back to SOL, and moves on.</p>
+<p class="lede">It never trades the token that pays you, and it never trades to move a price. It is a liquidity provider, the same role a thousand wallets play on Raydium and Meteora every day, with one difference: the fees it collects don’t belong to a team. Once a day they are split, and the largest share goes in SOL to whoever holds the token at that moment.</p>
+<p class="lede">Every seat it takes, every fee it harvests, every SOL it sends is a transaction you can open on Solscan. The ledger on this page is written by the same keeper that signs them.</p>
+</section>
+<section class="block" id="faq">
+<div class="head">
+<span class="tag">Questions</span>
+<h2>Fair questions, <em>plain answers.</em></h2>
+</div>
+<details><summary>Do I have to do anything to get paid?</summary><p>No. Hold the token in a wallet you control. Each payout the desk snapshots every holder and sends SOL pro rata. Tokens on an exchange sit in the exchange’s wallet, so they don’t count.</p></details>
+<details><summary>When are payouts?</summary><p>Every 24 hours, on the clock at the top of the page. If the pot is positive, it goes out. If it isn’t, nothing goes out and the clock resets.</p></details>
+<details><summary>What is the split?</summary><p>50% of the pot to holders. 30% stays in the desk as capital so it can take bigger seats. 20% to OPS, the operations budget that keeps the keeper, the RPC and the site running.</p></details>
+<details><summary>My payout was tiny, or didn’t come.</summary><p>Small amounts accrue instead of being sent, so gas doesn’t eat them. Your share adds up each payout and is sent once it crosses the dust floor. Paste your wallet above to see what has accrued.</p></details>
+<details><summary>What is the stock desk?</summary><p>Tokenized stocks (xStocks) trade on Solana around the clock, each backed by a real share. During US market hours the desk compares every pool to the real stock price. When a pool runs rich it sells a slice of its inventory there, when it runs cheap it buys, and it reverses the trade once the pool is back to normal. It never trades against a stale price: when the market is closed it waits. Realised profit is converted to SOL and goes into the same daily pot.</p></details>
+<details><summary>Does the desk trade the token?</summary><p id="faq-trade">No. It never buys or sells the token to move its price or make volume, and it doesn’t market-make the token’s own pool unless that pool makes the scanner’s list on merit like any other.</p></details>
+<details><summary>Where does the money actually come from?</summary><p>Fees paid by other people’s trades on Meteora pools where the desk provides liquidity, plus or minus what the desk’s inventory gained or lost while it sat in those pools. All of it is on-chain.</p></details>
+<details><summary>What happens on a bad day?</summary><p>A pool that falls through its floor is closed and sold. A losing day makes the pot negative; the next profitable days fill the hole before anyone gets paid. The 30% reserve share is the cushion.</p></details>
+<details><summary>Can the desk lose everything?</summary><p>It can lose a lot. Memecoin pools are the most volatile liquidity on Solana; the fees are high precisely because the risk is. Floors and position sizing limit the damage per seat. They don’t remove it.</p></details>
+</section>
+<footer>
+<div><span id="foot-wallet"></span><span id="foot-token"></span><a href="https://app.meteora.ag" target="_blank" rel="noopener">meteora ↗</a><span id="foot-x"></span></div>
+<div class="colophon">DESK · the first desk that pays the room</div>
+</footer>
+</main>
+<script src="/app.js" defer></script>
 </body>
 </html>

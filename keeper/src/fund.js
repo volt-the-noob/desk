@@ -1,4 +1,8 @@
-import { solBalance, tokenBalanceRaw, unwrapWsol } from './chain.js';
+import { solBalance, tokenBalanceRaw, unwrapWsol, solUsd } from './chain.js';
+import { buybackAndBurn } from './buyback.js';
+import { Income } from './income.js';
+import { StockDesk } from './stockdesk.js';
+import { snapshotHolders } from './holders.js';
 import { Pool } from './dlmm.js';
 import { Band } from './band.js';
 import { scanPools } from './scanner.js';
@@ -25,10 +29,14 @@ export class Fund {
     this.s = {
       status: 'running',
       pot: 0, feesTotal: 0, bandPnlTotal: 0, allocatedTotal: 0, paidTotal: 0, opsTotal: 0, reserveTotal: 0, unpaidOwed: 0,
+      paidTotalUsd: 0, opsTotalUsd: 0, buybackTotalSol: 0, buybackTotalUsd: 0, burnedTotal: 0, startEquity: null,
+      eligibleSupply: null, holdersCount: null, lastHolderScanAt: 0, incomeTotal: 0, stockPnlUsd: 0, stockTrades: 0,
       lastPayoutAt: 0, lastScanAt: 0, lastSnapshotAt: 0,
     };
     this.candidates = [];
     this.holderToken = null;
+    this.income = new Income(this);
+    this.stocks = new StockDesk(this);
     // paper-trading bankroll: balances and swaps simulated against real pool quotes
     this.virt = cfg.dryRun && cfg.dryRunSol > 0 ? { sol: cfg.dryRunSol, tokens: new Map() } : null;
   }
@@ -39,7 +47,9 @@ export class Fund {
     if (row) {
       const s = this.s;
       s.status = row.status ?? 'running';
-      for (const [k, col] of Object.entries({ pot: 'pot_sol', feesTotal: 'fees_total_sol', bandPnlTotal: 'band_pnl_total_sol', allocatedTotal: 'allocated_total_sol', paidTotal: 'paid_total_sol', opsTotal: 'ops_total_sol', reserveTotal: 'reserve_total_sol', unpaidOwed: 'unpaid_owed_sol' })) s[k] = Number(row[col] ?? 0);
+      for (const [k, col] of Object.entries({ pot: 'pot_sol', feesTotal: 'fees_total_sol', bandPnlTotal: 'band_pnl_total_sol', allocatedTotal: 'allocated_total_sol', paidTotal: 'paid_total_sol', opsTotal: 'ops_total_sol', reserveTotal: 'reserve_total_sol', unpaidOwed: 'unpaid_owed_sol', paidTotalUsd: 'paid_total_usd', opsTotalUsd: 'ops_total_usd', buybackTotalSol: 'buyback_total_sol', buybackTotalUsd: 'buyback_total_usd', burnedTotal: 'burned_total_tokens', incomeTotal: 'income_total_sol', stockPnlUsd: 'stock_pnl_usd', stockTrades: 'stock_trades' })) s[k] = Number(row[col] ?? 0);
+      s.startEquity = row.start_equity_sol != null ? Number(row.start_equity_sol) : null;
+      this.stocks.restore(row);
       s.lastPayoutAt = row.last_payout_at ? Date.parse(row.last_payout_at) : 0;
     }
     if (!this.s.lastPayoutAt) this.s.lastPayoutAt = now(); // first payout one interval after first boot
@@ -91,6 +101,20 @@ export class Fund {
     this.virt.tokens.set(k, (this.virt.tokens.get(k) ?? 0n) - xRaw);
   }
 
+  onPaperFees(sol) { if (this.virt) this.virt.sol += sol; }
+  onPaperSpend(sol) { if (this.virt) this.virt.sol -= sol; }
+
+  poolsOn() { return cfg.poolsEnabled && (!cfg.poolsStartAt || Date.now() >= Date.parse(cfg.poolsStartAt)); }
+
+  /** Revenue that isn't market making: creator-fee sweeps, and (live mode) realised stock-desk profit. */
+  async onIncome(sol, sig, source) {
+    this.s.pot += sol;
+    this.s.incomeTotal += sol;
+    if (this.virt) this.virt.sol += sol;
+    log.info(`income +${sol.toFixed(4)} SOL (${source}) → pot ${this.s.pot.toFixed(4)}`);
+    await ledger.event('income', { solDelta: sol, txs: sig ? [sig] : [], detail: { source, sol } });
+  }
+
   onWithdraw(pool, ySol, xRaw) {
     if (!this.virt) return;
     const k = pool.mintX.toBase58();
@@ -101,8 +125,9 @@ export class Fund {
   // ---------- pot ----------
   owedHolders() { return (cfg.holderSharePct / 100) * Math.max(this.s.pot, 0); }
   owedOps() { return (cfg.opsSharePct / 100) * Math.max(this.s.pot, 0); }
+  owedBuyback() { return (cfg.buybackSharePct / 100) * Math.max(this.s.pot, 0); }
   /** SOL that must stay out of the bands: gas + what's owed to holders and ops + accrued dust. */
-  holdSol() { return cfg.gasReserveSol + this.owedHolders() + this.owedOps() + this.s.unpaidOwed; }
+  holdSol() { return cfg.gasReserveSol + this.owedHolders() + this.owedOps() + this.owedBuyback() + this.s.unpaidOwed; }
 
   async book(kind, band, { solDelta = 0, bandPnl = 0, fees = 0, price = null, txs = [], detail = {} }) {
     this.s.pot += solDelta;
@@ -130,11 +155,14 @@ export class Fund {
   // ---------- main loop ----------
   async tick() {
     await this.refreshStatusFromDb();
-    if (this.s.status === 'running') {
+    if (this.s.status === 'running' && !this.poolsOn() && !this.openBands().length) {
+      // pool desk not started yet (day 2): nothing to do here
+    } else if (this.s.status === 'running') {
+      if (!this.poolsLogged && this.poolsOn()) { this.poolsLogged = true; log.info('pool desk is on'); await ledger.event('pools-on', { detail: { at: new Date().toISOString() } }); }
       for (const band of this.openBands()) {
         try { await band.tick(); } catch (e) { log.error(`${band.tag()} tick failed: ${e.message}`); }
       }
-      if (now() - this.s.lastScanAt >= cfg.scanIntervalSec * 1000) {
+      if (this.poolsOn() && now() - this.s.lastScanAt >= cfg.scanIntervalSec * 1000) {
         try { await this.rotate(); } catch (e) { log.error(`rotate failed: ${e.message}`); }
       }
     } else if (this.s.status === 'exit-all') {
@@ -142,6 +170,8 @@ export class Fund {
       this.s.status = 'paused';
       await ledger.saveState({ status: 'paused' });
     }
+    try { await this.income.sweep(); } catch (e) { log.error(`income sweep failed: ${e.message}`); }
+    try { await this.stocks.tick(); } catch (e) { log.error(`stock desk tick failed: ${e.message}`); }
     if (this.payoutDue()) await this.payout();
     await this.mark();
   }
@@ -176,6 +206,7 @@ export class Fund {
     for (const band of this.openBands()) {
       const c = candidates.find((x) => x.address === band.address);
       band.s.lastScore = c?.score ?? null;
+      band.s.lastRatio1h = c?.ratio1h ?? 0;
       band.s.missScans = stillHot.has(band.address) ? 0 : band.s.missScans + 1;
       if (band.s.missScans >= cfg.rotateOutScans) {
         try { await band.exit('cooled'); } catch (e) { log.error(`${band.tag()} exit failed: ${e.message}`); }
@@ -192,6 +223,7 @@ export class Fund {
       try {
         const pool = await Pool.load(c.address);
         const band = new Band(this, pool, c);
+        band.s.lastRatio1h = c.ratio1h;
         this.bands.set(band.address, band);
         await band.enter(budget);
         openTokens.add(c.tokenX);
@@ -222,29 +254,63 @@ export class Fund {
     }
     const holderSol = this.owedHolders();
     const opsSol = this.owedOps();
+    const buybackSol = this.owedBuyback();
     const reserveSol = (cfg.reserveSharePct / 100) * potBefore;
+    const px = (await solUsd()) ?? 0;
     const available = (await this.freeSol()) - cfg.gasReserveSol - this.s.unpaidOwed;
-    const res = await runPayout({ holderToken: this.holderToken, wallet: this.wallet, holderSol, opsSol, availableSol: available, potBefore });
+    const res = await runPayout({ holderToken: this.holderToken, wallet: this.wallet, holderSol, opsSol, availableSol: available, potBefore, solUsd: px });
 
-    // what left the pot: holders' allocation (paid or accrued) + ops paid + the reserve share, which stays in the wallet as capital
+    let bb = { sol: 0, tokensBurned: 0, txs: [] };
+    if (buybackSol > 0 && this.holderToken) {
+      try { bb = await buybackAndBurn({ wallet: this.wallet, holderToken: this.holderToken, sol: Math.min(buybackSol, Math.max(0, available - res.paid - res.opsPaid)) }); }
+      catch (e) { log.error(`buyback failed, share stays in the pot: ${e.message}`); }
+      if (bb.sol > 0) await ledger.event('buyback', { solDelta: -bb.sol, txs: bb.txs, detail: { sol: bb.sol, sol_usd: px, venue: bb.venue, tokens_bought: bb.tokensBought, tokens_burned: bb.tokensBurned } });
+    }
+
     const opsTaken = cfg.opsWallet ? res.opsPaid : 0;
-    this.s.pot -= res.allocated + opsTaken + reserveSol;
+    this.s.pot -= res.allocated + opsTaken + reserveSol + bb.sol;
     this.s.allocatedTotal += res.allocated;
     this.s.paidTotal += res.paid;
+    this.s.paidTotalUsd += res.paid * px;
     this.s.opsTotal += opsTaken;
+    this.s.opsTotalUsd += opsTaken * px;
     this.s.reserveTotal += reserveSol;
+    this.s.buybackTotalSol += bb.sol;
+    this.s.buybackTotalUsd += bb.sol * px;
+    this.s.burnedTotal += bb.tokensBurned;
     this.s.unpaidOwed = cfg.dryRun ? Math.max(0, this.s.unpaidOwed + res.allocated - res.paid) : await ledger.unpaidTotal();
-    if (this.virt) this.virt.sol -= res.paid + opsTaken;
-    await ledger.event('payout', { detail: { pot_before: r6(potBefore), pot_after: r6(this.s.pot), holders_sol: r6(res.allocated), holders_paid_sol: r6(res.paid), ops_sol: r6(opsTaken), reserve_sol: r6(reserveSol), wallets: res.walletsPaid, holders: res.holders, tx_count: res.txCount, payout_id: res.payoutId } });
+    if (this.virt) this.virt.sol -= res.paid + opsTaken + bb.sol;
+    await ledger.event('payout', { detail: { pot_before: r6(potBefore), pot_after: r6(this.s.pot), holders_sol: r6(res.allocated), holders_paid_sol: r6(res.paid), ops_sol: r6(opsTaken), reserve_sol: r6(reserveSol), buyback_sol: r6(bb.sol), burned_tokens: bb.tokensBurned, sol_usd: px, wallets: res.walletsPaid, holders: res.holders, tx_count: res.txCount, payout_id: res.payoutId } });
   }
 
-  // ---------- marks ----------
+  /** Eligible supply + holder count, for the site's payout estimator. Heavy (getProgramAccounts), so hourly. */
+  async refreshHolders() {
+    if (!this.holderToken || now() - this.s.lastHolderScanAt < 3600e3) return;
+    this.s.lastHolderScanAt = now();
+    try {
+      const hs = await snapshotHolders(this.holderToken, this.wallet.publicKey);
+      this.s.holdersCount = hs.length;
+      this.s.eligibleSupply = Number(hs.reduce((a, h) => a + h.raw, 0n)) / 10 ** this.holderToken.decimals;
+    } catch (e) { log.warn(`holder refresh failed: ${e.message}`); }
+  }
+
   async mark() {
+    await this.refreshHolders();
+    const px = await solUsd();
     const freeSol = await this.freeSol();
     let deployed = 0;
     for (const b of this.openBands()) { try { deployed += await b.value(); } catch { deployed += b.s.capitalSol; } }
+    let stockUsd = 0; try { stockUsd = await this.stocks.valueUsd(); } catch {}
+    const stockSol = px ? stockUsd / px : 0;
+    deployed += stockSol;
     const s = this.s;
+    if (s.startEquity == null) s.startEquity = r6(freeSol + deployed);
     await ledger.saveState({
+      sol_usd: px, start_equity_sol: s.startEquity, profit_total_sol: r6(s.feesTotal + s.bandPnlTotal),
+      paid_total_usd: r6(s.paidTotalUsd), ops_total_usd: r6(s.opsTotalUsd), buyback_total_sol: r6(s.buybackTotalSol), buyback_total_usd: r6(s.buybackTotalUsd), burned_total_tokens: s.burnedTotal,
+      eligible_supply: s.eligibleSupply, holders_count: s.holdersCount,
+      income_total_sol: r6(s.incomeTotal), stock_pnl_usd: Math.round(s.stockPnlUsd * 100) / 100, stock_trades: s.stockTrades, stock_mode: cfg.stockMode,
+      stock: this.stocks.view(), stock_book_usd: Math.round(stockUsd * 100) / 100, stock_swept_usd: this.stocks.sweptUsd, stock_realised_usd: this.stocks.realisedUsd, stock_virtual: this.stocks.v, pools_on: this.poolsOn(), pools_start_at: cfg.poolsStartAt || null,
       wallet: this.wallet.publicKey.toBase58(), holder_token_mint: cfg.holderTokenMint || null, ops_wallet: cfg.opsWallet || null,
       dry_run: cfg.dryRun, status: s.status,
       pot_sol: r6(s.pot), fees_total_sol: r6(s.feesTotal), band_pnl_total_sol: r6(s.bandPnlTotal),
@@ -253,7 +319,7 @@ export class Fund {
       last_tick_at: iso(now()), last_scan_at: iso(s.lastScanAt), last_payout_at: iso(s.lastPayoutAt), next_payout_at: iso(this.nextPayoutAt()),
       candidates: this.candidates.slice(0, 8).map((c) => ({ symbol: c.symbol, pool: c.address, score: Math.round(c.score), fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, tvl: Math.round(c.tvl), vol24: Math.round(c.vol24) })),
       config: {
-        holder_share_pct: cfg.holderSharePct, reserve_share_pct: cfg.reserveSharePct, ops_share_pct: cfg.opsSharePct, payout_interval_hours: cfg.payoutIntervalHours,
+        holder_share_pct: cfg.holderSharePct, reserve_share_pct: cfg.reserveSharePct, ops_share_pct: cfg.opsSharePct, buyback_share_pct: cfg.buybackSharePct, payout_interval_hours: cfg.payoutIntervalHours,
         min_payout_sol: cfg.minPayoutSol, max_pools: this.seats ?? seatCount(0), seat_sol: cfg.seatSol, min_seats: cfg.minSeats, max_seats: cfg.maxSeats, seat_weights: cfg.seatWeights, max_seat_pct: cfg.maxSeatPct, bins_below: cfg.binsBelow, bins_above: cfg.binsAbove,
         strategy: cfg.strategy, floor_pct_below_entry: cfg.floorPctBelowEntry, rotate_out_scans: cfg.rotateOutScans, scan_interval_sec: cfg.scanIntervalSec, tick_ms: cfg.tickMs,
       },
