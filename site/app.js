@@ -231,28 +231,41 @@ const W = 600, cx = 30, cw = W - 60;
 $('position-rows').innerHTML = openPools.length ? openPools.map((p) => {
 const entry = Number(p.entry_price), lastp = Number(p.last_price || p.entry_price);
 const chg = entry ? lastp / entry - 1 : 0;
-const flPct = entry && p.floor_price ? Number(p.floor_price) / entry - 1 : -0.35;
+const cap = Number(p.capital_sol) || 0;
+const val = p.value_sol != null ? Number(p.value_sol) : null;
+const pnl = p.total_pnl_sol != null ? Number(p.total_pnl_sol) : Number(p.fees_sol || 0) + Number(p.band_pnl_sol || 0);
+const pnlPct = cap ? (pnl / cap) * 100 : 0;
+const flPct = entry && p.floor_price ? Number(p.floor_price) / entry - 1 : -0.12;
 const step = 1 + (p.bin_step ?? 50) / 10000;
-const half = p.position_lower != null && p.position_upper != null ? (p.position_upper - p.position_lower) / 2 : 20;
-const bLo = Math.pow(step, -half) - 1, bHi = Math.pow(step, half) - 1; // band relative to entry (centered at open)
-const lo = Math.min(flPct, -0.45), hi = 0.6;
+const half = p.position_lower != null && p.position_upper != null ? (p.position_upper - p.position_lower) / 2 : 34;
+const full = p.venue === 'pumpswap';
+const bLo = full ? -1 : Math.pow(step, -half) - 1, bHi = full ? 1 : Math.pow(step, half) - 1;
+const span = Math.max(0.18, Math.abs(flPct) * 1.25, Math.abs(chg) * 1.6, full ? 0.2 : Math.max(-bLo, bHi) * 1.15);
+const lo = -span, hi = span;
 const X = (v) => cx + ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * cw;
-const out = chg < bLo || chg > bHi;
+const out = !full && (chg < bLo || chg > bHi);
+const trail = p.sleeve === 'meme' && p.peak_price && entry ? (Number(p.peak_price) / entry - 1) - 0.10 : null;
+const state = out ? ['out of band · re-centering', 'out'] : ['in band · earning', ''];
 return `<div class="position">
-<a class="name" href="https://app.meteora.ag/dlmm/${esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<span class="slv ${p.sleeve === 'meme' ? 'meme' : ''}">${p.sleeve === 'meme' ? 'meme' : 'calm'}</span><span class="slv ven">${p.venue === 'pumpswap' ? 'pumpswap' : 'meteora'}</span><small>opened ${ago(p.opened_at)} · ${n(p.capital_sol, 2)} SOL</small></a>
-<svg viewBox="0 0 ${W} 64" preserveAspectRatio="none" aria-label="${esc(p.symbol)} band">
-<line class="axis" x1="${cx}" x2="${cx + cw}" y1="40" y2="40"/>
-<rect class="floor" x="${cx}" y="30" width="${X(flPct) - cx}" height="20"/>
-<rect class="band ${out ? 'out' : ''}" x="${X(bLo)}" y="28" width="${X(bHi) - X(bLo)}" height="24"/>
-<line class="entry" x1="${X(0)}" x2="${X(0)}" y1="24" y2="56"/>
-<text class="lbl" x="${cx}" y="16">floor ${(flPct * 100).toFixed(0)}%</text>
-<text class="lbl" x="${X(0)}" y="16" text-anchor="middle">entry</text>
-<text class="lbl" x="${cx + cw}" y="16" text-anchor="end">+60%</text>
-<circle class="now-ring" cx="${X(chg)}" cy="40" r="9"/><circle class="now" cx="${X(chg)}" cy="40" r="5"/>
-<text class="now-lbl" x="${X(chg)}" y="63" text-anchor="middle">${(chg >= 0 ? '+' : '') + (chg * 100).toFixed(1)}%</text>
+<a class="name" href="${p.venue === 'pumpswap' ? 'https://swap.pump.fun/?input=So11111111111111111111111111111111111111112&output=' + esc(p.token_mint || '') : 'https://app.meteora.ag/dlmm/' + esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<span class="slv ${p.sleeve === 'meme' ? 'meme' : ''}">${p.sleeve === 'meme' ? 'meme' : 'calm'}</span><span class="slv ven">${full ? 'pumpswap' : 'meteora'}</span><small>${n(cap, 2)} SOL in · opened ${ago(p.opened_at)}</small></a>
+<div class="pbox">
+<div class="pnow"><span class="live"></span>${val != null ? `worth <b>${n(val, 3)} SOL</b>${solUsd ? ` <u>$${n(val * solUsd, 0)}</u>` : ''}` : 'valuing…'}<i class="${cls(pnl)}">${sgn(pnl, 3)} SOL · ${pnl >= 0 ? '+' : ''}${n(pnlPct, 1)}%</i></div>
+<svg viewBox="0 0 ${W} 60" preserveAspectRatio="none" aria-label="${esc(p.symbol)} position">
+<line class="axis" x1="${cx}" x2="${cx + cw}" y1="34" y2="34"/>
+${flPct > lo ? `<rect class="floor" x="${cx}" y="24" width="${X(flPct) - cx}" height="20"/><line class="stop" x1="${X(flPct)}" x2="${X(flPct)}" y1="20" y2="48"/>` : ''}
+<rect class="band ${out ? 'out' : ''}" x="${X(bLo)}" y="22" width="${X(bHi) - X(bLo)}" height="24"/>
+<line class="entry" x1="${X(0)}" x2="${X(0)}" y1="18" y2="50"/>
+${trail != null && trail > lo ? `<line class="stop trail" x1="${X(trail)}" x2="${X(trail)}" y1="20" y2="48"/>` : ''}
+<rect class="travel ${cls(chg)}" x="${X(Math.min(0, chg))}" y="31" width="${Math.abs(X(chg) - X(0))}" height="6"/>
+<text class="lbl" x="${cx}" y="12">${flPct > lo ? `stop ${(flPct * 100).toFixed(0)}%` : ''}</text>
+<text class="lbl" x="${X(0)}" y="12" text-anchor="middle">entry</text>
+<text class="lbl" x="${cx + cw}" y="12" text-anchor="end">${full ? 'full range' : 'band'}</text>
+<circle class="now-ring" cx="${X(chg)}" cy="34" r="9"/><circle class="now" cx="${X(chg)}" cy="34" r="5"/>
+<text class="now-lbl ${cls(chg)}" x="${X(chg)}" y="58" text-anchor="middle">${(chg >= 0 ? '+' : '') + (chg * 100).toFixed(1)}%</text>
 </svg>
-<div><div class="figs2"><div><span>fees</span><b class="pos">${n(p.fees_sol, 3)}</b></div><div><span>band</span><b class="${cls(p.band_pnl_sol)}">${sgn(p.band_pnl_sol, 3)}</b></div><div><span>net</span><b class="${cls(Number(p.fees_sol) + Number(p.band_pnl_sol))}">${sgn(Number(p.fees_sol) + Number(p.band_pnl_sol), 3)}</b></div></div>
-<div class="state ${out ? 'out' : ''}" style="margin-top:8px">${out ? 'out of band · re-centering' : 'in band · earning'}</div></div>
+</div>
+<div><div class="figs2"><div><span>fees</span><b class="pos">${n(p.fees_sol, 4)}</b></div><div><span>price</span><b class="${cls(Number(p.band_pnl_sol || 0) + Number(p.unrealised_sol || 0))}">${sgn(Number(p.band_pnl_sol || 0) + Number(p.unrealised_sol || 0), 4)}</b></div></div>
+<div class="state ${state[1]}" style="margin-top:8px">${state[0]}</div></div>
 </div>`;
 }).join('') : (lastState && lastState.pools_on === false ? '' : '<p class="empty" style="padding:18px 0">No seats taken. The desk opens seats on its next scan when it has capital to deploy.</p>');
 const closed = await q(`desk_pools?desk=eq.${D}&status=eq.closed&order=closed_at.desc&limit=8`);

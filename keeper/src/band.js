@@ -57,6 +57,11 @@ export class Band {
   }
 
   /** Current SOL value of everything this band holds (position + unclaimed fees + loose inventory of its token). */
+  /** Live value in SOL, cached for the ledger row so the site can show what the seat is worth now. */
+  async valueCached() {
+    try { const v = await this.value(); this.s.valueSol = v; this.s.valueAt = now(); return v; } catch { return this.s.valueSol ?? null; }
+  }
+
   async value() {
     const { price } = await this.pool.price();
     const pos = await this.view(price);
@@ -213,9 +218,13 @@ export class Band {
       pool_address: this.address, token_mint: this.pool.mintX.toBase58(), symbol: this.symbol, status: s.status,
       capital_sol: r6(s.capitalSol), sol_leg: r6(s.solLeg), fees_sol: r6(s.feesSol), band_pnl_sol: r6(s.bandPnlSol), entry_price: s.entryPrice, last_price: s.lastPrice,
       floor_price: this.floor() || null, last_score: s.lastScore, miss_scans: s.missScans,
+      value_sol: s.valueSol != null ? r6(s.valueSol) : null,
+      unrealised_sol: s.valueSol != null ? r6(s.valueSol - s.capitalSol - s.bandPnlSol) : null,
+      total_pnl_sol: s.valueSol != null ? r6(s.feesSol + s.bandPnlSol + (s.valueSol - s.capitalSol - s.bandPnlSol)) : r6(s.feesSol + s.bandPnlSol),
+      peak_price: s.peak ?? null, sleeve: this.sleeve, venue: 'dlmm',
       position_pubkey: s.position?.pubkey ?? null, position_lower: s.position?.lower ?? null, position_upper: s.position?.upper ?? null,
       position_cost_sol: s.position?.costSol ?? null, position_x_in: s.position?.xIn ?? null, position_y_in: s.position?.yIn ?? null, position_price_in: s.position?.priceIn ?? null,
-      opened_at: iso(s.openedAt), closed_at: iso(s.closedAt), exit_reason: s.exitReason, bin_step: this.pool.binStep, updated_at: iso(now()), sleeve: this.sleeve, peak_price: s.peak ?? null, venue: 'dlmm',
+      opened_at: iso(s.openedAt), closed_at: iso(s.closedAt), exit_reason: s.exitReason, bin_step: this.pool.binStep, updated_at: iso(now()),
     };
   }
 

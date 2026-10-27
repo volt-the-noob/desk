@@ -36,6 +36,7 @@ export class AmmSeat {
     return { value, fees: Math.max(0, value * (1 - 1 / growth)), price: st.price };   // pump.fun takes protocol/creator fees from reserves, so clamp
   }
   async value() { return (await this.mark()).value; }
+  async valueCached() { try { const m = await this.mark(); this.s.valueSol = m.value; this.s.feesSol = r6(m.fees); return m.value; } catch { return this.s.valueSol ?? null; } }
 
   async enter(budgetSol) {
     const quoteLamports = BigInt(Math.floor((budgetSol / 2) * 1e9));
@@ -76,6 +77,9 @@ export class AmmSeat {
     return { pool_address: this.address, token_mint: this.pool.mintX.toBase58(), symbol: this.symbol, status: s.status, venue: 'pumpswap', sleeve: this.sleeve,
       capital_sol: r6(s.capitalSol), sol_leg: 0, fees_sol: r6(s.feesSol), band_pnl_sol: r6(s.bandPnlSol), entry_price: s.entryPrice, last_price: s.lastPrice,
       floor_price: this.floor() || null, last_score: s.lastScore, miss_scans: s.missScans, peak_price: s.peak, lp_amount: s.lp, k_entry: s.kEntry,
+      value_sol: s.valueSol != null ? r6(s.valueSol) : null,
+      unrealised_sol: s.valueSol != null ? r6(s.valueSol - s.capitalSol) : null,
+      total_pnl_sol: s.valueSol != null ? r6(s.feesSol + s.valueSol - s.capitalSol) : r6(s.feesSol),
       opened_at: iso(s.openedAt), closed_at: iso(s.closedAt), exit_reason: s.exitReason, updated_at: iso(now()) };
   }
 

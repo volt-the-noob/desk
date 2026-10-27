@@ -260,11 +260,19 @@ export class Fund {
     return cfg.memeMaxSeats > 0 ? Math.min(cfg.memeMaxSeats, n) : n;
   }
 
+  /**
+   * Size the next seat so the sleeve can still fill the seats it intends to open. The rank weights give the best
+   * candidate the largest share, but a seat is never so large that the remaining seats would fall below
+   * MIN_CAPITAL_PER_POOL_SOL — otherwise one coin takes the whole sleeve and the rest of the shortlist is skipped.
+   */
   async budgetForNewPool(sl = 'calm') {
     const { free, capital } = await this.fundCapital(sl);
     const seats = this.sleeveSeats(sl, capital), rank = this.openBands(sl).length;
     if (rank >= seats) return 0;
-    return Math.max(0, Math.min(capital * seatShare(rank, seats), free));
+    const want = capital * seatShare(rank, seats);
+    const seatsLeftAfter = Math.max(0, seats - rank - 1);
+    const keepBack = seatsLeftAfter * cfg.minCapitalPerPoolSol;     // reserve enough for the remaining seats
+    return Math.max(0, Math.min(want, free - keepBack, free));
   }
 
   async rotate() {
@@ -380,7 +388,7 @@ export class Fund {
     const px = await solUsd();
     const freeSol = await this.freeSol();
     let deployed = 0;
-    for (const b of this.openBands()) { try { deployed += await b.value(); } catch { deployed += b.s.capitalSol; } }
+    for (const b of this.openBands()) { const v = await b.valueCached(); deployed += v ?? b.s.capitalSol; }
     let stockUsd = 0; try { stockUsd = await this.stocks.valueUsd(); } catch {}
     const stockSol = px ? stockUsd / px : 0;
     deployed += stockSol;
