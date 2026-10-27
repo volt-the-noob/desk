@@ -33,6 +33,8 @@ export const cfg = {
   // --- meme sleeve: high-volume memecoins / on-chain coins, a fixed share of the pool desk with its own limits ---
   memeSharePct: num('MEME_SHARE_PCT', 40),               // share of POOL_MAX_CAPITAL_SOL the meme sleeve may use (0 = off)
   memeMaxSeats: num('MEME_MAX_SEATS', 0),               // 0 = no limit; seats are limited by capital and MIN_CAPITAL_PER_POOL_SOL
+  memeMinSeats: num('MEME_MIN_SEATS', 3),               // spread the meme sleeve over at least this many seats, so one coin is never the whole sleeve
+  memeSeatSolMax: num('MEME_SEAT_SOL_MAX', 8),          // and never more than this in one meme seat
   memeMinMcapUsd: num('MEME_MIN_MCAP_USD', 500_000),
   memeMinVolumeUsd: num('MEME_MIN_VOLUME_USD', 500_000),
   memeMinLiqUsd: num('MEME_MIN_LIQ_USD', 20_000),

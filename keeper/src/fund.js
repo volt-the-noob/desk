@@ -254,9 +254,9 @@ export class Fund {
   /** How many seats a sleeve may hold: capital ÷ SEAT_SOL, with no ceiling unless one is configured. */
   sleeveSeats(sl, capital) {
     if (sl !== 'meme') return seatCount(capital);
-    const byCapital = Math.max(1, Math.floor(capital / cfg.seatSol));
-    const needed = cfg.seatSolMax > 0 ? Math.ceil(capital / cfg.seatSolMax) : byCapital;
-    const n = Math.max(1, Math.min(byCapital, Math.max(needed, 1)));
+    // the risky sleeve is always spread: at least MEME_MIN_SEATS, and enough seats that none exceeds MEME_SEAT_SOL_MAX
+    const needed = cfg.memeSeatSolMax > 0 ? Math.ceil(capital / cfg.memeSeatSolMax) : 1;
+    const n = Math.max(cfg.memeMinSeats, needed, 1);
     return cfg.memeMaxSeats > 0 ? Math.min(cfg.memeMaxSeats, n) : n;
   }
 

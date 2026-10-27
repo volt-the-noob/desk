@@ -15,7 +15,7 @@ No fixed SOL cap and no seat limit: seats are added as capital grows (one per 4 
 Split into two sleeves:
 - calm 60% of that budget: verified, ≥7d old, ≥$100k TVL, moved <5%/24h, 12% floor · breaker −5% of the sleeve / 7d → pause 24h
 - meme 40% of that budget (MEME_SHARE_PCT): ≥$500k mcap, ≥$500k 24h volume, ≥1,500 holders, Jupiter organic score ≥50, mint+freeze
-  authority off, top-10 holders ≤35%, dev ≤10%, ≥$20k pool liquidity · max 2 seats · 10% trailing stop, 6h max hold, 12% floor ·
+  authority off, top-10 holders ≤35%, dev ≤10%, ≥$20k pool liquidity · spread over ≥3 coins (MEME_MIN_SEATS), max 8 SOL per seat · 10% trailing stop, 6h max hold, 12% floor ·
   breaker −20% of the sleeve / 7d → pause 48h. Backtests of busy meme pools were negative in every variant; this sleeve is
   the high-risk part and its losses come out of the pot before payouts. MEME_SHARE_PCT=0 turns it off.
 
