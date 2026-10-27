@@ -27,10 +27,10 @@ export async function buybackAndBurn({ wallet, holderToken, sol }) {
   const before = await tokenBalanceRaw(wallet.publicKey, holderToken.mint, holderToken.programId);
   const swap = await (await fetch(`${JUP}/swap`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ quoteResponse: q, userPublicKey: wallet.publicKey.toBase58(), wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, prioritizationFeeLamports: 'auto' }),
+    body: JSON.stringify({ quoteResponse: q, userPublicKey: wallet.publicKey.toBase58(), wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: cfg.jupMaxPriorityLamports, priorityLevel: 'high' } } }),
   })).json();
   if (!swap?.swapTransaction) throw new Error(`jupiter swap build failed: ${JSON.stringify(swap).slice(0, 200)}`);
-  out.txs.push(await sendVersioned(swap.swapTransaction, wallet, 'buyback'));
+  out.txs.push(await sendVersioned(swap.swapTransaction, wallet, 'buyback', swap.lastValidBlockHeight));
   const after = await tokenBalanceRaw(wallet.publicKey, holderToken.mint, holderToken.programId);
   const bought = after - before;
   out.sol = sol;

@@ -13,6 +13,11 @@ export class Band {
     this.wallet = fund.wallet;
     this.address = pool.address.toBase58();
     this.symbol = meta.symbol ?? this.address.slice(0, 6);
+    this.sleeve = meta.sleeve ?? 'calm';
+    // exits: meme seats get a trailing stop, a maximum hold and their own floor; calm seats keep the desk-wide floor
+    this.opts = this.sleeve === 'meme'
+      ? { floorPct: cfg.memeFloorPct, trailPct: cfg.memeTrailPct, maxHoldHours: cfg.memeMaxHoldHours }
+      : { floorPct: cfg.floorPctBelowEntry, trailPct: 0, maxHoldHours: cfg.maxHoldHours };
     this.s = {
       status: 'open',
       position: null,            // { pubkey, lower, upper, costSol, xIn, yIn, priceIn, openedAt }
@@ -30,7 +35,7 @@ export class Band {
   tag() { return `[${this.symbol}]`; }
 
   floor() {
-    return cfg.floorPctBelowEntry > 0 && this.s.entryPrice ? this.s.entryPrice * (1 - cfg.floorPctBelowEntry / 100) : 0;
+    return this.opts.floorPct > 0 && this.s.entryPrice ? this.s.entryPrice * (1 - this.opts.floorPct / 100) : 0;
   }
 
   /** Uniform view over the on-chain position or the dry-run virtual one. */
@@ -76,7 +81,9 @@ export class Band {
     const pos = await this.view(price);
     const floor = this.floor();
     if (floor > 0 && price < floor) return this.exit('floor', { floor, price });
-    if (cfg.maxHoldHours > 0 && now() - this.s.openedAt > cfg.maxHoldHours * 3600e3) return this.exit('max-hold');
+    this.s.peak = Math.max(this.s.peak ?? this.s.entryPrice ?? price, price);
+    if (this.opts.trailPct > 0 && price < this.s.peak * (1 - this.opts.trailPct / 100)) return this.exit('trailing-stop', { peak: this.s.peak, price });
+    if (this.opts.maxHoldHours > 0 && now() - this.s.openedAt > this.opts.maxHoldHours * 3600e3) return this.exit('max-hold');
     if (!pos) {
       // nothing deployed (e.g. a previous open failed); try again with this band's loose inventory + its capital
       return this.openBand(price, binId, this.s.capitalSol, 'pool-enter');
@@ -208,16 +215,17 @@ export class Band {
       floor_price: this.floor() || null, last_score: s.lastScore, miss_scans: s.missScans,
       position_pubkey: s.position?.pubkey ?? null, position_lower: s.position?.lower ?? null, position_upper: s.position?.upper ?? null,
       position_cost_sol: s.position?.costSol ?? null, position_x_in: s.position?.xIn ?? null, position_y_in: s.position?.yIn ?? null, position_price_in: s.position?.priceIn ?? null,
-      opened_at: iso(s.openedAt), closed_at: iso(s.closedAt), exit_reason: s.exitReason, bin_step: this.pool.binStep, updated_at: iso(now()),
+      opened_at: iso(s.openedAt), closed_at: iso(s.closedAt), exit_reason: s.exitReason, bin_step: this.pool.binStep, updated_at: iso(now()), sleeve: this.sleeve, peak_price: s.peak ?? null, venue: 'dlmm',
     };
   }
 
   static hydrate(fund, pool, row) {
-    const b = new Band(fund, pool, { symbol: row.symbol, score: row.last_score });
+    const b = new Band(fund, pool, { symbol: row.symbol, score: row.last_score, sleeve: row.sleeve ?? 'calm' });
     const s = b.s;
     s.status = row.status; s.capitalSol = Number(row.capital_sol ?? 0); s.solLeg = Number(row.sol_leg ?? 0); s.feesSol = Number(row.fees_sol ?? 0); s.bandPnlSol = Number(row.band_pnl_sol ?? 0);
     s.entryPrice = row.entry_price != null ? Number(row.entry_price) : null; s.missScans = row.miss_scans ?? 0;
     s.openedAt = row.opened_at ? Date.parse(row.opened_at) : now();
+    if (row.peak_price != null) s.peak = Number(row.peak_price);
     if (row.position_pubkey) {
       s.position = { pubkey: row.position_pubkey, lower: row.position_lower, upper: row.position_upper, costSol: Number(row.position_cost_sol), xIn: Number(row.position_x_in), yIn: Number(row.position_y_in), priceIn: Number(row.position_price_in), openedAt: s.openedAt };
     }

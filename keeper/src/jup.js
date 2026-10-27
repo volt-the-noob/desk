@@ -43,10 +43,10 @@ export async function swap(wallet, q, { outMint, outProgram } = {}) {
   const bal = async () => (outMint === SOL_MINT ? BigInt(toLamports(await solBalance(wallet.publicKey))) : tokenBalanceRaw(wallet.publicKey, new (await import('@solana/web3.js')).PublicKey(outMint), outProgram));
   const before = await bal();
   const r = await jfetch(`${API}/swap`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ quoteResponse: q, userPublicKey: wallet.publicKey.toBase58(), wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, prioritizationFeeLamports: 'auto' }) });
+    body: JSON.stringify({ quoteResponse: q, userPublicKey: wallet.publicKey.toBase58(), wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: cfg.jupMaxPriorityLamports, priorityLevel: 'high' } } }) });
   const j = await r.json();
   if (!j?.swapTransaction) throw new Error(`jupiter swap build: ${JSON.stringify(j).slice(0, 160)}`);
-  const sig = await sendVersioned(j.swapTransaction, wallet, `swap ${q.inputMint.slice(0, 4)}→${q.outputMint.slice(0, 4)}`);
+  const sig = await sendVersioned(j.swapTransaction, wallet, `swap ${q.inputMint.slice(0, 4)}→${q.outputMint.slice(0, 4)}`, j.lastValidBlockHeight);
   const after = await bal();
   return { inRaw: BigInt(q.inAmount), outRaw: after - before, sig };
 }

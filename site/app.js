@@ -70,6 +70,7 @@ const sp = Number(st.stock_pnl_usd ?? 0), spe = $('stock-pnl'); spe.textContent 
 $('stock-pnl-k').textContent = `USD · ${st.stock_trades ?? 0} trades${st.stock_mode === 'paper' ? ' · paper' : ''}`;
 renderStocks(st);
 renderPoolsSoon(st);
+renderRisk(st);
 $('roi-k').textContent = start > 0 ? `on ${n(start, 1)} SOL, incl. everything paid out` : 'since launch';
 const H = cfg.holder_share_pct ?? 50, R = cfg.reserve_share_pct ?? 30, O = cfg.ops_share_pct ?? 20, B = cfg.buyback_share_pct ?? 0;
 $('lede-split').textContent = H === 50 ? 'half to holders in SOL' : `${H}% to holders in SOL`;
@@ -77,7 +78,7 @@ $('lede-rest').textContent = `, ${R}% back into the book, ${O}% to OPS` + (B ? `
 $('split-chips').innerHTML = `<span><b>${H}%</b> holders · in SOL</span><span><b>${R}%</b> reserve · the book</span><span><b>${O}%</b> OPS</span>` + (B ? `<span><b>${B}%</b> buyback · burned</span>` : '');
 if (B) $('faq-trade').textContent = `Only in one way: ${B}% of every payout buys ${C.TICKER} on the open market and burns it, on the same daily clock, in one transaction you can open on Solscan. Outside that it never buys or sells the token, and it never trades to move a price.`;
 const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
-$('seat-word').textContent = cfg.max_pools ? `${words[cfg.max_pools] ?? cfg.max_pools}` : 'Up to eight';
+if ($('seat-word')) $('seat-word').textContent = cfg.max_seats ? `${words[cfg.max_seats] ?? cfg.max_seats}` : 'Three';
 const hs = (cfg.holder_share_pct ?? 50) / 100;
 setNum('owed', hs * Math.max(Number(st.pot_sol), 0), 4);
 const interval = (cfg.payout_interval_hours ?? 24) * 3600e3;
@@ -109,6 +110,7 @@ function dur(ms) { const h = Math.floor(ms / 3600e3), m = Math.floor((ms % 3600e
 function renderStocks(st) {
 const k = st.stock || {}; const mode = st.stock_mode || k.mode || 'off';
 $('stk-mode').textContent = mode === 'live' ? (k.dry ? 'simulated' : 'live') : mode;
+const soon = $('stk-soon'); if (mode !== 'live') { soon.hidden = false; soon.innerHTML = '<span>The stock desk goes live on day two.<br>Until then it watches every session and publishes the trades it would have made.</span><span>mode <b>paper</b></span>'; } else soon.hidden = true;
 const open = !!k.market_open;
 $('stk-status').innerHTML = open ? `<span class="dot"></span><span>US market open · <b>watching ${(k.board || []).length} stocks</b></span>` : `<span class="dot off"></span><span>US market closed · opens in <b>${dur(nextOpen() - Date.now())}</b> · the desk never trades against a stale price</span>`;
 $('stk-book').textContent = '$' + n(st.stock_book_usd ?? 0, 0);
@@ -123,6 +125,16 @@ const bar = `<span class="gapbar"><i><b class="${hot ? 'hot' : ''}" style="${g >
 const desk = r.open ? `<span class="badge ${r.open}">${r.open === 'sell' ? 'sold rich' : 'bought cheap'}</span>` : `<span class="badge watch">${r.warm ? 'watching' : 'learning'}</span>`;
 return `<tr><td class="t">${esc(r.t)}x</td><td>$${n(r.ref, 2)}${r.ref_age > 180 ? ' <span class="empty">closed</span>' : ''}</td><td>$${n(r.bid, 2)}</td><td>$${n(r.ask, 2)}</td><td>${r.usual >= 0 ? '+' : ''}${n(r.usual, 2)}%</td><td>${r.premium >= 0 ? '+' : ''}${n(r.premium, 2)}%</td><td>${bar}</td><td>${desk}</td></tr>`;
 }).join('') : '<tr><td colspan="8" class="empty">No prices yet.</td></tr>';
+}
+function renderRisk(st) {
+const r = st.pool_risk; const el = $('pool-risk'); if (!r || !r.calm) { el.innerHTML = ''; return; }
+const cell = (name, x, note) => { const paused = x.paused_until && Date.parse(x.paused_until) > Date.now();
+  return `<div><div class="k">${name} sleeve</div><div class="v">${n(x.cap_sol, x.cap_sol >= 10 ? 1 : 2)} SOL</div><div class="u">${note}</div></div>`
+  + `<div><div class="k">${r.breaker_days}-day result</div><div class="v ${cls(x.result ?? 0)}">${x.result == null ? '—' : sgn(x.result, 3)}</div><div class="u">breaker at ${n(x.limit ?? -(x.cap_sol * x.breaker_pct / 100), 3)} SOL · <span class="${paused ? 'neg' : 'pos'}">${paused ? 'paused ' + dur(Date.parse(x.paused_until) - Date.now()) : 'active'}</span></div></div>`; };
+const m = r.meme || {}, f = m.filters || {}, e = m.exits || {};
+el.innerHTML = `<div><div class="k">working capital</div><div class="v">${n(r.budget_sol ?? 0, (r.budget_sol ?? 0) >= 10 ? 1 : 2)} SOL</div><div class="u">${r.alloc_pct}% of the treasury · rest stays in SOL</div></div>` + cell('calm', r.calm, 'verified · moved <5% · 12% floor') + cell('meme', m, `≥${(f.min_holders ?? 0).toLocaleString('en-US')} holders · organic ≥${f.min_organic ?? 0} · ${e.trail_pct ?? 0}% trailing stop · ${e.max_hold_h ?? 0}h max`);
+const mc = Array.isArray(st.meme_candidates) ? st.meme_candidates : [];
+$('meme-cands').innerHTML = mc.length ? `<table><thead><tr><th>Coin</th><th>Venue</th><th>Mcap</th><th>Holders</th><th>Organic</th><th>Fee÷liq 24h</th><th>Vol 24h</th></tr></thead><tbody>` + mc.map((c) => `<tr><td><a href="${c.venue === 'pumpswap' ? 'https://swap.pump.fun/?input=So11111111111111111111111111111111111111112&output=' : 'https://app.meteora.ag/dlmm/'}${esc(c.venue === 'pumpswap' ? (c.token || c.pool) : c.pool)}" target="_blank" rel="noopener">${esc(c.symbol)}</a></td><td>${c.venue === 'pumpswap' ? 'PumpSwap' : 'Meteora'}</td><td>$${n(c.mcap / 1e6, 2)}M</td><td>${Number(c.holders).toLocaleString('en-US')}</td><td>${c.organic}</td><td>${n(c.fee_tvl_24h, 1)}%</td><td>$${n(c.vol24, 0)}</td></tr>`).join('') + '</tbody></table>' : '<p class="empty">No meme scan yet.</p>';
 }
 function renderPoolsSoon(st) {
 const el = $('pools-soon'); const at = st.pools_start_at ? Date.parse(st.pools_start_at) : null;
@@ -179,7 +191,7 @@ const m = (k, v) => (v == null ? '' : ` · <span class="n">${k}</span> <span cla
 const K = (t, c = '') => `<span class="k ${c}">${t}</span>`;
 switch (e.kind) {
 case 'boot': return [K('boot'), `keeper up${d.dry_run ? ' · dry run' : ''}`];
-case 'scan': return [K('scan'), (d.candidates || []).slice(0, 5).map((c) => `${esc(c.symbol)} <span class="n">${c.score}</span>`).join(' · ') || 'no candidates'];
+case 'scan': return [K(d.sleeve === 'meme' ? 'scan · meme' : 'scan'), (d.candidates || []).slice(0, 5).map((c) => `${esc(c.symbol)}${c.score != null ? ` <span class="n">${n(c.score, 0)}</span>` : ''}`).join(' · ') || 'no candidates'];
 case 'pool-enter': return [K('enter'), `${sym}band ${d.lower}…${d.upper} · <span class="n">capital</span> ${n(d.capital_sol, 2)} SOL`];
 case 'rebalance': return [K('close'), `${sym}out of range${m('band', d.band_pnl_sol)}${m('fees', d.fees_sol)}`];
 case 'rebalance-open': return [K('re-center'), `${sym}band ${d.lower}…${d.upper}`];
@@ -195,15 +207,23 @@ case 'stock-setup': return [K('stock desk'), `funded ${n(d.sol, 2)} SOL → $${n
 case 'income': return [K('income', 'pay'), `${esc(d.source)} <span class="pos">+${n(d.sol, 4)} SOL</span> → pot`];
 case 'buyback': return [K('buyback', 'pay'), `${n(d.sol, 3)} SOL via ${esc(d.venue || 'PumpSwap')} · burned ${Number(d.tokens_burned || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`];
 case 'pools-on': return [K('pools on', 'pay'), 'liquidity desk opened'];
+case 'pools-breaker': return [K('breaker', 'bad'), `${esc(d.sleeve || 'pool')} sleeve ${n(d.result_sol, 3)} SOL over the window (limit ${n(d.limit_sol, 3)}): its seats closed, paused`];
+case 'fee-claim': return [K('fees', 'pay'), `creator fees distributed <span class="pos">${n(d.sol, 4)} SOL</span> · desk share ${n(d.desk_sol, 4)}`];
 default: return [K(esc(e.kind)), ''];
 }
 };
 const box = $('tape-box');
-const fresh = !first;
-const html = list.map((e, i) => { const [k, t] = fmt(e); const isNew = fresh && !seen.has(e.id); return `<div class="row ${isNew ? 'fresh' : ''}" style="animation-delay:${first ? Math.min(i * 35, 1200) : 0}ms"><span class="t">${hms(e.ts)}</span>${k}<span>${t}</span></div>`; }).join('');
-if (list.some((e) => !seen.has(e.id))) { box.innerHTML = html + `<div class="row" style="animation-delay:${first ? 1300 : 0}ms"><span class="t"></span><span></span><span><span class="cursor"></span></span></div>`; }
-seen = new Set(list.map((e) => e.id));
+// Only ever animate rows that are actually new. Re-rendering every row on each refresh (with a stagger) left most of
+// them mid-animation at opacity 0, which is what made the blotter look smeared.
+const prevIds = new Set([...box.querySelectorAll('.row[data-id]')].map((el) => el.dataset.id));
+const html = list.map((e, i) => { const [k, t] = fmt(e); const isNew = !first && !prevIds.has(String(e.id));
+  return `<div class="row${isNew ? ' fresh' : ''}" data-id="${esc(String(e.id))}"${first ? ` style="animation-delay:${Math.min(i * 25, 700)}ms"` : ''}><span class="t">${hms(e.ts)}</span>${k}<span>${t}</span></div>`; }).join('');
+box.innerHTML = html;
+for (const e of list) seen.add(e.id);
+box.scrollTop = box.scrollHeight;
+first = false;
 }
+
 async function loadPools() {
 openPools = await q(`desk_pools?desk=eq.${D}&status=eq.open&order=opened_at.desc`);
 ticker();
@@ -219,7 +239,7 @@ const lo = Math.min(flPct, -0.45), hi = 0.6;
 const X = (v) => cx + ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * cw;
 const out = chg < bLo || chg > bHi;
 return `<div class="position">
-<a class="name" href="https://app.meteora.ag/dlmm/${esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<small>opened ${ago(p.opened_at)} · ${n(p.capital_sol, 2)} SOL</small></a>
+<a class="name" href="https://app.meteora.ag/dlmm/${esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<span class="slv ${p.sleeve === 'meme' ? 'meme' : ''}">${p.sleeve === 'meme' ? 'meme' : 'calm'}</span><span class="slv ven">${p.venue === 'pumpswap' ? 'pumpswap' : 'meteora'}</span><small>opened ${ago(p.opened_at)} · ${n(p.capital_sol, 2)} SOL</small></a>
 <svg viewBox="0 0 ${W} 64" preserveAspectRatio="none" aria-label="${esc(p.symbol)} band">
 <line class="axis" x1="${cx}" x2="${cx + cw}" y1="40" y2="40"/>
 <rect class="floor" x="${cx}" y="30" width="${X(flPct) - cx}" height="20"/>

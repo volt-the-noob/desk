@@ -6,7 +6,9 @@ import { FeeClaimer } from './claim.js';
 import { snapshotHolders } from './holders.js';
 import { Pool } from './dlmm.js';
 import { Band } from './band.js';
-import { scanPools } from './scanner.js';
+import { PumpPool } from './pumpswap.js';
+import { AmmSeat } from './ammseat.js';
+import { scanPools, scanMemes } from './scanner.js';
 import { mintInfo } from './holders.js';
 import { runPayout } from './payout.js';
 import { ledger } from './ledger.js';
@@ -16,6 +18,7 @@ import { log } from './log.js';
 const now = () => Date.now();
 const iso = (t) => (t ? new Date(t).toISOString() : null);
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
+const clampPct = (x) => Math.max(0, Math.min(100, Number(x) || 0));
 
 /**
  * The fund owns the wallet, the pot and the clock. Bands own one pool each.
@@ -32,6 +35,7 @@ export class Fund {
       pot: 0, feesTotal: 0, bandPnlTotal: 0, allocatedTotal: 0, paidTotal: 0, opsTotal: 0, reserveTotal: 0, unpaidOwed: 0,
       paidTotalUsd: 0, opsTotalUsd: 0, buybackTotalSol: 0, buybackTotalUsd: 0, burnedTotal: 0, startEquity: null,
       eligibleSupply: null, holdersCount: null, lastHolderScanAt: 0, incomeTotal: 0, stockPnlUsd: 0, stockTrades: 0,
+      poolLog: [], poolsPausedUntil: 0, memePausedUntil: 0,
       lastPayoutAt: 0, lastScanAt: 0, lastSnapshotAt: 0,
     };
     this.candidates = [];
@@ -51,6 +55,9 @@ export class Fund {
       s.status = row.status ?? 'running';
       for (const [k, col] of Object.entries({ pot: 'pot_sol', feesTotal: 'fees_total_sol', bandPnlTotal: 'band_pnl_total_sol', allocatedTotal: 'allocated_total_sol', paidTotal: 'paid_total_sol', opsTotal: 'ops_total_sol', reserveTotal: 'reserve_total_sol', unpaidOwed: 'unpaid_owed_sol', paidTotalUsd: 'paid_total_usd', opsTotalUsd: 'ops_total_usd', buybackTotalSol: 'buyback_total_sol', buybackTotalUsd: 'buyback_total_usd', burnedTotal: 'burned_total_tokens', incomeTotal: 'income_total_sol', stockPnlUsd: 'stock_pnl_usd', stockTrades: 'stock_trades' })) s[k] = Number(row[col] ?? 0);
       s.startEquity = row.start_equity_sol != null ? Number(row.start_equity_sol) : null;
+      s.poolLog = Array.isArray(row.pool_log) ? row.pool_log : [];
+      s.poolsPausedUntil = row.pools_paused_until ? Date.parse(row.pools_paused_until) : 0;
+      s.memePausedUntil = row.meme_paused_until ? Date.parse(row.meme_paused_until) : 0;
       this.stocks.restore(row);
       s.lastPayoutAt = row.last_payout_at ? Date.parse(row.last_payout_at) : 0;
     }
@@ -61,8 +68,9 @@ export class Fund {
     }
     for (const prow of await ledger.openPools()) {
       try {
-        const pool = await Pool.load(prow.pool_address);
-        const band = Band.hydrate(this, pool, prow);
+        const band = prow.venue === 'pumpswap'
+          ? AmmSeat.hydrate(this, await PumpPool.load(prow.pool_address), prow)
+          : Band.hydrate(this, await Pool.load(prow.pool_address), prow);
         this.bands.set(band.address, band);
         log.info(`resumed band ${band.tag()} capital ${band.s.capitalSol} SOL`);
       } catch (e) { log.error(`could not resume pool ${prow.pool_address}: ${e.message}`); }
@@ -106,7 +114,23 @@ export class Fund {
   onPaperFees(sol) { if (this.virt) this.virt.sol += sol; }
   onPaperSpend(sol) { if (this.virt) this.virt.sol -= sol; }
 
-  poolsOn() { return cfg.poolsEnabled && (!cfg.poolsStartAt || Date.now() >= Date.parse(cfg.poolsStartAt)); }
+  /** Live and nearly out of SOL: only the fee claim (which tops the wallet back up) is allowed to spend. */
+  lowGas() { return !cfg.dryRun && (this.lastSol ?? 1) < cfg.gasMinSol; }
+
+  poolsBaseOn() { return cfg.poolsEnabled && (!cfg.poolsStartAt || Date.now() >= Date.parse(cfg.poolsStartAt)); }
+  sleeveOn(sl) { return this.poolsBaseOn() && this.sleeveCap(sl) > 0 && Date.now() >= (sl === 'meme' ? this.s.memePausedUntil : this.s.poolsPausedUntil); }
+  poolsOn() { return this.sleeveOn('calm') || this.sleeveOn('meme'); }
+  /**
+   * The pool desk's size follows the treasury: POOL_ALLOC_PCT of equity that isn't owed to holders, OPS or buybacks,
+   * so it grows as fees come in and shrinks after a payout. POOL_MAX_CAPITAL_SOL (0 = off) is an optional ceiling.
+   * Each sleeve gets its share of that: meme MEME_SHARE_PCT, calm the rest.
+   */
+  poolBudget() {
+    const own = Math.max(0, (this.s.equity ?? 0) - this.owedHolders() - this.owedOps() - this.owedBuyback() - this.s.unpaidOwed - cfg.gasReserveSol);
+    const byPct = own * clampPct(cfg.poolAllocPct) / 100;
+    return cfg.poolMaxCapitalSol > 0 ? Math.min(byPct, cfg.poolMaxCapitalSol) : byPct;
+  }
+  sleeveCap(sl) { const m = clampPct(cfg.memeSharePct) / 100; return this.poolBudget() * (sl === 'meme' ? m : 1 - m); }
 
   /** Revenue that isn't market making: creator-fee sweeps, and (live mode) realised stock-desk profit. */
   async onIncome(sol, sig, source) {
@@ -137,6 +161,7 @@ export class Fund {
     this.s.bandPnlTotal += bandPnl;
     band.s.feesSol += fees;
     band.s.bandPnlSol += bandPnl;
+    if (fees || bandPnl) { this.s.poolLog.push([Date.now(), r6(fees + bandPnl), band.sleeve]); this.trimPoolLog(); }
     log.info(`${band.tag()} ${kind}: ${solDelta >= 0 ? '+' : ''}${solDelta.toFixed(4)} SOL (fees ${fees.toFixed(4)}, band ${bandPnl >= 0 ? '+' : ''}${bandPnl.toFixed(4)}) → pot ${this.s.pot.toFixed(4)}`);
     await this.event(kind, band, { solDelta: r6(solDelta), price, txs, detail: { fees_sol: r6(fees), band_pnl_sol: r6(bandPnl), ...detail } });
   }
@@ -152,18 +177,27 @@ export class Fund {
     } catch { /* keep going */ }
   }
 
-  openBands() { return [...this.bands.values()].filter((b) => b.s.status === 'open'); }
+  openBands(sl) { return [...this.bands.values()].filter((b) => b.s.status === 'open' && (!sl || b.sleeve === sl)); }
 
   // ---------- main loop ----------
   async tick() {
     await this.refreshStatusFromDb();
-    if (this.s.status === 'running' && !this.poolsOn() && !this.openBands().length) {
+    if (!cfg.dryRun) { try { this.lastSol = await solBalance(this.wallet.publicKey); } catch {} }
+    if (this.lowGas()) {
+      if (!this.warnedGas) { this.warnedGas = true; log.warn(`desk wallet has ${this.lastSol?.toFixed(5)} SOL, below GAS_MIN_SOL ${cfg.gasMinSol}: only claiming fees until it is topped up`); }
+      try { await this.claimer.tick(); } catch (e) { log.error(`fee claim failed: ${e.message}`); }
+      await this.mark();
+      return;
+    }
+    this.warnedGas = false;
+    if (this.s.status === 'running' && !this.poolsBaseOn() && !this.openBands().length) {
       // pool desk not started yet (day 2): nothing to do here
     } else if (this.s.status === 'running') {
-      if (!this.poolsLogged && this.poolsOn()) { this.poolsLogged = true; log.info('pool desk is on'); await ledger.event('pools-on', { detail: { at: new Date().toISOString() } }); }
+      if (!this.poolsLogged && this.poolsBaseOn()) { this.poolsLogged = true; log.info('pool desk is on'); await ledger.event('pools-on', { detail: { at: new Date().toISOString() } }); }
       for (const band of this.openBands()) {
         try { await band.tick(); } catch (e) { log.error(`${band.tag()} tick failed: ${e.message}`); }
       }
+      try { await this.checkBreaker(); } catch (e) { log.error(`breaker check failed: ${e.message}`); }
       if (this.poolsOn() && now() - this.s.lastScanAt >= cfg.scanIntervalSec * 1000) {
         try { await this.rotate(); } catch (e) { log.error(`rotate failed: ${e.message}`); }
       }
@@ -181,62 +215,106 @@ export class Fund {
 
   // ---------- rotation ----------
   /** Fund capital = free SOL above the hold + what the open seats were given. */
-  async fundCapital() {
-    const free = Math.max(0, (await this.freeSol()) - this.holdSol());
-    const deployed = this.openBands().reduce((s, b) => s + b.s.capitalSol, 0);
-    return { free, deployed, capital: free + deployed };
+  trimPoolLog() { const cut = Date.now() - cfg.poolBreakerDays * 86400e3; this.s.poolLog = this.s.poolLog.filter(([t]) => t >= cut); }
+
+  /** A sleeve's result over the breaker window: closed results + what its open seats are up or down right now. */
+  async sleeveResult(sl) {
+    this.trimPoolLog();
+    let open = 0;
+    for (const b of this.openBands(sl)) { try { open += (await b.value()) - b.s.capitalSol - b.s.bandPnlSol; } catch {} }
+    return this.s.poolLog.filter((e) => (e[2] ?? 'calm') === sl).reduce((a, e) => a + e[1], 0) + open;
   }
 
-  /** Budget for the next seat: its rank's share of capital, never more than what's free. */
-  async budgetForNewPool() {
-    const { free, capital } = await this.fundCapital();
-    const seats = seatCount(capital);
-    const rank = this.openBands().length;
+  /** Circuit breakers, one per sleeve: past its limit, close that sleeve's seats and pause it. */
+  async checkBreaker() {
+    this.breaker = {};
+    for (const sl of ['calm', 'meme']) {
+      const cap = this.sleeveCap(sl); if (cap <= 0) continue;
+      const pct = sl === 'meme' ? cfg.memeBreakerPct : cfg.poolBreakerPct, pauseH = sl === 'meme' ? cfg.memeBreakerPauseHours : cfg.poolBreakerPauseHours;
+      const res = await this.sleeveResult(sl), limit = -cap * pct / 100;
+      this.breaker[sl] = { result: r6(res), limit: r6(limit), cap: r6(cap) };
+      if (res >= limit) continue;
+      log.warn(`${sl} sleeve circuit breaker: ${res.toFixed(3)} SOL over ${cfg.poolBreakerDays}d (limit ${limit.toFixed(3)}): closing its seats, pausing ${pauseH}h`);
+      for (const b of this.openBands(sl)) { try { await b.exit('breaker'); } catch (e) { log.error(`${b.tag()} breaker exit failed: ${e.message}`); } }
+      const until = Date.now() + pauseH * 3600e3;
+      if (sl === 'meme') this.s.memePausedUntil = until; else this.s.poolsPausedUntil = until;
+      this.s.poolLog = this.s.poolLog.filter((e) => (e[2] ?? 'calm') !== sl);   // fresh window for this sleeve after the pause
+      await ledger.event('pools-breaker', { detail: { sleeve: sl, result_sol: r6(res), limit_sol: r6(limit), paused_until: iso(until) } });
+    }
+  }
+
+  /** Capital a sleeve may use: free SOL (after everything owed and gas), within the sleeve's share of the pool cap. */
+  async fundCapital(sl = 'calm') {
+    const cap = this.sleeveCap(sl);
+    const deployed = this.openBands(sl).reduce((a, b) => a + b.s.capitalSol, 0);
+    const free = Math.max(0, Math.min((await this.freeSol()) - this.holdSol(), cap - deployed));
+    return { free, deployed, capital: Math.min(free + deployed, cap) };
+  }
+
+  /** How many seats a sleeve may hold: capital ÷ SEAT_SOL, with no ceiling unless one is configured. */
+  sleeveSeats(sl, capital) {
+    if (sl !== 'meme') return seatCount(capital);
+    const byCapital = Math.max(1, Math.floor(capital / cfg.seatSol));
+    const needed = cfg.seatSolMax > 0 ? Math.ceil(capital / cfg.seatSolMax) : byCapital;
+    const n = Math.max(1, Math.min(byCapital, Math.max(needed, 1)));
+    return cfg.memeMaxSeats > 0 ? Math.min(cfg.memeMaxSeats, n) : n;
+  }
+
+  async budgetForNewPool(sl = 'calm') {
+    const { free, capital } = await this.fundCapital(sl);
+    const seats = this.sleeveSeats(sl, capital), rank = this.openBands(sl).length;
     if (rank >= seats) return 0;
     return Math.max(0, Math.min(capital * seatShare(rank, seats), free));
   }
 
   async rotate() {
-    const candidates = await scanPools();
-    this.candidates = candidates;
     this.s.lastScanAt = now();
-    const { capital } = await this.fundCapital();
-    const seats = seatCount(capital);
-    this.seats = seats;
-    const stillHot = new Set(candidates.slice(0, seats * 2).map((c) => c.address));
+    for (const sl of ['calm', 'meme']) {
+      if (!this.sleeveOn(sl)) continue;
+      try { await this.rotateSleeve(sl); } catch (e) { log.error(`${sl} rotate failed: ${e.message}`); }
+    }
+  }
 
-    // 1. cool-off exits
-    for (const band of this.openBands()) {
+  async rotateSleeve(sl) {
+    const candidates = sl === 'meme' ? await scanMemes() : await scanPools();
+    if (sl === 'meme') this.memeCandidates = candidates; else this.candidates = candidates;
+    const { capital } = await this.fundCapital(sl);
+    const seats = this.sleeveSeats(sl, capital);
+    if (sl === 'calm') this.seats = seats;
+    const stillGood = new Set(candidates.slice(0, seats * 2).map((c) => c.address));
+    const outScans = sl === 'meme' ? cfg.memeRotateOutScans : cfg.rotateOutScans;
+
+    // 1. exits: a seat that no longer qualifies for long enough is closed
+    for (const band of this.openBands(sl)) {
       const c = candidates.find((x) => x.address === band.address);
       band.s.lastScore = c?.score ?? null;
       band.s.lastRatio1h = c?.ratio1h ?? 0;
-      band.s.missScans = stillHot.has(band.address) ? 0 : band.s.missScans + 1;
-      if (band.s.missScans >= cfg.rotateOutScans) {
-        try { await band.exit('cooled'); } catch (e) { log.error(`${band.tag()} exit failed: ${e.message}`); }
-      }
+      band.s.missScans = stillGood.has(band.address) ? 0 : band.s.missScans + 1;
+      if (band.s.missScans >= outScans) { try { await band.exit(sl === 'meme' ? 'filters' : 'cooled'); } catch (e) { log.error(`${band.tag()} exit failed: ${e.message}`); } }
     }
 
-    // 2. fill empty seats, best candidate first
+    // 2. fill this sleeve's empty seats, best candidate first, never two seats in the same token
     const openTokens = new Set(this.openBands().map((b) => b.pool.mintX.toBase58()));
     for (const c of candidates) {
-      if (this.openBands().length >= seats) break;
+      if (this.openBands(sl).length >= seats) break;
       if (this.bands.get(c.address)?.s.status === 'open' || openTokens.has(c.tokenX)) continue;
-      const budget = await this.budgetForNewPool();
-      if (budget < cfg.minCapitalPerPoolSol) { log.info(`rotate: ${budget.toFixed(3)} SOL free, below MIN_CAPITAL_PER_POOL_SOL; not opening more`); break; }
+      const budget = await this.budgetForNewPool(sl);
+      if (budget < cfg.minCapitalPerPoolSol) { log.info(`${sl}: ${budget.toFixed(3)} SOL available, below MIN_CAPITAL_PER_POOL_SOL; not opening more`); break; }
       try {
-        const pool = await Pool.load(c.address);
-        const band = new Band(this, pool, c);
+        const band = c.venue === 'pumpswap'
+          ? new AmmSeat(this, await PumpPool.load(c.address), { ...c, sleeve: sl })
+          : new Band(this, await Pool.load(c.address), { ...c, sleeve: sl });
         band.s.lastRatio1h = c.ratio1h;
         this.bands.set(band.address, band);
         await band.enter(budget);
         openTokens.add(c.tokenX);
-        log.info(`rotate: entered ${band.tag()} with ${budget.toFixed(3)} SOL as seat ${this.openBands().length}/${seats} (score ${c.score.toFixed(0)}, fee/tvl 1h ${c.ratio1h}%)`);
+        log.info(`${sl}: entered ${band.tag()} with ${budget.toFixed(3)} SOL as seat ${this.openBands(sl).length}/${seats}` + (sl === 'meme' ? ` (mcap $${(c.mcap / 1e6).toFixed(2)}M, ${c.holders} holders, organic ${c.organic})` : ` (fee/tvl 24h ${c.ratio24h}%)`));
       } catch (e) {
-        log.error(`rotate: could not enter ${c.symbol} (${c.address}): ${e.message}`);
+        log.error(`${sl}: could not enter ${c.symbol} (${c.address}): ${e.message}`);
         this.bands.delete(c.address);
       }
     }
-    await ledger.event('scan', { detail: { candidates: candidates.slice(0, 10).map((c) => ({ symbol: c.symbol, pool: c.address, score: Math.round(c.score), fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, vol24: Math.round(c.vol24) })), open: this.openBands().map((b) => b.symbol) } });
+    await ledger.event('scan', { detail: { sleeve: sl, candidates: candidates.slice(0, 10).map((c) => ({ symbol: c.symbol, pool: c.address, score: Math.round(c.score), fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, vol24: Math.round(c.vol24), venue: c.venue, ...(sl === 'meme' ? { mcap: c.mcap, holders: c.holders, organic: c.organic } : {}) })), open: this.openBands(sl).map((b) => b.symbol) } });
   }
 
   // ---------- payouts ----------
@@ -307,20 +385,26 @@ export class Fund {
     const stockSol = px ? stockUsd / px : 0;
     deployed += stockSol;
     const s = this.s;
+    s.equity = freeSol + deployed;
     if (s.startEquity == null) s.startEquity = r6(freeSol + deployed);
     await ledger.saveState({
       sol_usd: px, start_equity_sol: s.startEquity, profit_total_sol: r6(s.feesTotal + s.bandPnlTotal),
       paid_total_usd: r6(s.paidTotalUsd), ops_total_usd: r6(s.opsTotalUsd), buyback_total_sol: r6(s.buybackTotalSol), buyback_total_usd: r6(s.buybackTotalUsd), burned_total_tokens: s.burnedTotal,
       eligible_supply: s.eligibleSupply, holders_count: s.holdersCount,
       income_total_sol: r6(s.incomeTotal), stock_pnl_usd: Math.round(s.stockPnlUsd * 100) / 100, stock_trades: s.stockTrades, stock_mode: cfg.stockMode,
-      stock: this.stocks.view(), stock_book_usd: Math.round(stockUsd * 100) / 100, stock_swept_usd: this.stocks.sweptUsd, stock_realised_usd: this.stocks.realisedUsd, stock_virtual: this.stocks.v, pools_on: this.poolsOn(), pools_start_at: cfg.poolsStartAt || null, fee_claim: this.claimer.view(),
+      stock: this.stocks.view(), stock_book_usd: Math.round(stockUsd * 100) / 100, stock_swept_usd: this.stocks.sweptUsd, stock_realised_usd: this.stocks.realisedUsd, stock_virtual: this.stocks.v, pools_on: this.poolsOn(), pools_start_at: cfg.poolsStartAt || null, pool_log: s.poolLog, pools_paused_until: s.poolsPausedUntil ? iso(s.poolsPausedUntil) : null, meme_paused_until: s.memePausedUntil ? iso(s.memePausedUntil) : null,
+      meme_candidates: (this.memeCandidates ?? []).slice(0, 8).map((c) => ({ symbol: c.symbol, pool: c.address, venue: c.venue, token: c.tokenX, mcap: c.mcap, holders: c.holders, organic: c.organic, fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, tvl: Math.round(c.tvl), vol24: Math.round(c.vol24) })),
+      pool_risk: { alloc_pct: cfg.poolAllocPct, budget_sol: r6(this.poolBudget()), max_capital_sol: cfg.poolMaxCapitalSol || null, meme_share_pct: cfg.memeSharePct, breaker_days: cfg.poolBreakerDays, verified_only: cfg.poolVerifiedOnly,
+        calm: { cap_sol: r6(this.sleeveCap('calm')), breaker_pct: cfg.poolBreakerPct, ...(this.breaker?.calm ?? {}), paused_until: s.poolsPausedUntil ? iso(s.poolsPausedUntil) : null },
+        meme: { cap_sol: r6(this.sleeveCap('meme')), breaker_pct: cfg.memeBreakerPct, ...(this.breaker?.meme ?? {}), paused_until: s.memePausedUntil ? iso(s.memePausedUntil) : null, filters: { min_mcap: cfg.memeMinMcapUsd, min_volume: cfg.memeMinVolumeUsd, min_holders: cfg.memeMinHolders, min_organic: cfg.memeMinOrganic, max_top_holders_pct: cfg.memeMaxTopHoldersPct }, exits: { trail_pct: cfg.memeTrailPct, max_hold_h: cfg.memeMaxHoldHours, floor_pct: cfg.memeFloorPct } } }, fee_claim: this.claimer.view(),
       wallet: this.wallet.publicKey.toBase58(), holder_token_mint: cfg.holderTokenMint || null, ops_wallet: cfg.opsWallet || null,
       dry_run: cfg.dryRun, status: s.status,
       pot_sol: r6(s.pot), fees_total_sol: r6(s.feesTotal), band_pnl_total_sol: r6(s.bandPnlTotal),
+      gas_sol: this.lastSol ?? null, low_gas: this.lowGas(),
       allocated_total_sol: r6(s.allocatedTotal), paid_total_sol: r6(s.paidTotal), ops_total_sol: r6(s.opsTotal), reserve_total_sol: r6(s.reserveTotal), unpaid_owed_sol: r6(s.unpaidOwed),
       equity_sol: r6(freeSol + deployed), free_sol: r6(freeSol), deployed_sol: r6(deployed), open_pools: this.openBands().length,
       last_tick_at: iso(now()), last_scan_at: iso(s.lastScanAt), last_payout_at: iso(s.lastPayoutAt), next_payout_at: iso(this.nextPayoutAt()),
-      candidates: this.candidates.slice(0, 8).map((c) => ({ symbol: c.symbol, pool: c.address, score: Math.round(c.score), fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, tvl: Math.round(c.tvl), vol24: Math.round(c.vol24) })),
+      candidates: this.candidates.slice(0, 8).map((c) => ({ symbol: c.symbol, pool: c.address, venue: c.venue, score: Math.round(c.score), fee_tvl_1h: c.ratio1h, fee_tvl_24h: c.ratio24h, tvl: Math.round(c.tvl), vol24: Math.round(c.vol24) })),
       config: {
         holder_share_pct: cfg.holderSharePct, reserve_share_pct: cfg.reserveSharePct, ops_share_pct: cfg.opsSharePct, buyback_share_pct: cfg.buybackSharePct, payout_interval_hours: cfg.payoutIntervalHours,
         min_payout_sol: cfg.minPayoutSol, max_pools: this.seats ?? seatCount(0), seat_sol: cfg.seatSol, min_seats: cfg.minSeats, max_seats: cfg.maxSeats, seat_weights: cfg.seatWeights, max_seat_pct: cfg.maxSeatPct, bins_below: cfg.binsBelow, bins_above: cfg.binsAbove,

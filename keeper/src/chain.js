@@ -70,13 +70,14 @@ export async function sendTx(tx, signers, label = 'tx') {
 }
 
 /** Sign + send a base64 VersionedTransaction (e.g. from Jupiter). */
-export async function sendVersioned(b64, signer, label = 'vtx') {
+export async function sendVersioned(b64, signer, label = 'vtx', lastValidBlockHeight = null) {
   if (cfg.dryRun) { log.info(`[dry-run] would send ${label}`); return `dry-run-${label}-${Date.now()}`; }
   const tx = VersionedTransaction.deserialize(Buffer.from(b64, 'base64'));
   tx.sign([signer]);
-  const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-  const conf = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+  const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 5 });
+  const blockhash = tx.message.recentBlockhash;
+  const lvbh = lastValidBlockHeight ?? (await connection.getBlockHeight('confirmed')) + 150;
+  const conf = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight: lvbh }, 'confirmed');
   if (conf.value.err) throw new Error(`${label} failed on-chain: ${JSON.stringify(conf.value.err)}`);
   log.info(`${label} confirmed ${sig}`);
   return sig;

@@ -43,19 +43,18 @@ export class StockDesk {
     this.board = {};
     this.lastAt = 0; this.lastSweepAt = 0;
     this.v = null;                    // virtual inventory for dry-run live mode: { usdc, shares: {t} }
-    this.realisedUsd = 0; this.sweptUsd = 0;
+    this.realisedUsd = 0; this.sweptUsd = 0; this.lastTopup = 0; this.fundedSol = 0;
     this.marketOpen = false;
-    this.clipUsd = cfg.stockClipUsd || 500;   // re-sized from the book after setup when STOCK_CLIP_USD=0
-    if (cfg.stockMode !== 'off') log.info(`stock desk (${cfg.stockMode}${cfg.stockMode === 'live' && cfg.dryRun ? ', dry-run' : ''}): ${this.tickers.join(', ')} · clip $${cfg.stockClipUsd || 'auto'} · enter at ${cfg.stockEnterPct}% · capital ${cfg.stockCapitalSol} SOL`);
+    this.clipUsd = cfg.stockClipUsd || 0;     // sized from the book as fee income funds it
+    if (cfg.stockMode !== 'off') log.info(`stock desk (${cfg.stockMode}${cfg.stockMode === 'live' && cfg.dryRun ? ', dry-run' : ''}): ${this.tickers.join(', ')} · clip $${cfg.stockClipUsd || 'auto'} · enter at ${cfg.stockEnterPct}% · book grows from fee income up to ${cfg.stockCapitalSol} SOL`);
   }
 
   live() { return cfg.stockMode === 'live'; }
   restore(row) {
-    if (!row) return;
-    this.realisedUsd = Number(row.stock_realised_usd ?? 0); this.sweptUsd = Number(row.stock_swept_usd ?? 0);   // live-only P&L, never paper
+    if (!row || Boolean(row.dry_run) !== cfg.dryRun) return;   // never carry simulated state into a live book, or back
+    this.realisedUsd = Number(row.stock_realised_usd ?? 0); this.sweptUsd = Number(row.stock_swept_usd ?? 0);
     if (row.stock_virtual && cfg.dryRun) this.v = row.stock_virtual;
-    if (row.stock?.clip_usd && !cfg.stockClipUsd) this.clipUsd = row.stock.clip_usd;
-    if (this.v || Number(row.stock_book_usd) > 1) this.setupDone = true;
+    this.fundedSol = Number(row.stock?.funded_sol ?? 0);
   }
 
   // ---------- prices ----------
@@ -87,32 +86,46 @@ export class StockDesk {
     return out;
   }
 
-  /** First run: convert STOCK_CAPITAL_SOL into USDC, then put STOCK_INVENTORY_PCT of it into an even xStock basket. */
-  async setup() {
-    if (!this.live() || this.v || this.setupDone) return;
-    const bal = await this.balances();
-    const have = bal.usdc + Object.values(bal.shares).reduce((a, b) => a + b, 0);
-    if (!cfg.dryRun && have > 1) { this.setupDone = true; if (!cfg.stockClipUsd) this.clipUsd = Math.floor((bal.usdc / this.tickers.length) * 0.9); return; }   // already funded on-chain
+  /**
+   * Funding from fee income. Every STOCK_TOPUP_SEC, free SOL (wallet minus the gas reserve and everything owed to holders,
+   * OPS and buybacks) moves into the book in steps of at least STOCK_TOPUP_MIN_SOL, until the book reaches STOCK_CAPITAL_SOL.
+   * Each step: SOL → USDC, then STOCK_INVENTORY_PCT of it into an even xStock basket. Trade size grows with the book.
+   */
+  async topUp() {
+    if (!this.live() || Date.now() - this.lastTopup < cfg.stockTopupSec * 1000) return;
+    this.lastTopup = Date.now();
     const px = await solUsd(); if (!px) return;
-    const lam = toLamports(cfg.stockCapitalSol);
-    const q = await quote(SOL_MINT, USDC_MINT, lam, 50);
+    const book = await this.valueUsd();
+    const room = Math.max(0, cfg.stockCapitalSol - book / px);
+    const share = this.fund.poolsOn?.() ? Math.min(cfg.stockFreeSharePct, 50) : cfg.stockFreeSharePct;   // from day 2 the pool desk gets the other half
+    const free = Math.max(0, (await this.fund.freeSol()) - this.fund.holdSol()) * share / 100;
+    const sol = Math.min(room, free);
+    if (sol < cfg.stockTopupMinSol) { this.resize(book); return; }
+    const q = await quote(SOL_MINT, USDC_MINT, toLamports(sol), 50);
     const r = await swap(this.fund.wallet, q, { outMint: USDC_MINT, outProgram: TOKEN_PROGRAM_ID });
-    let usdc = Number(r.outRaw) / 1e6;
-    const inv = { usdc, shares: Object.fromEntries(this.tickers.map((t) => [t, 0])) };
-    if (cfg.dryRun) this.fund.onPaperSpend(cfg.stockCapitalSol);
+    const usdc = Number(r.outRaw) / 1e6;
+    if (cfg.dryRun) { this.fund.onPaperSpend(sol); this.v ??= { usdc: 0, shares: Object.fromEntries(this.tickers.map((t) => [t, 0])) }; this.v.usdc += usdc; }
     const per = (usdc * cfg.stockInventoryPct / 100) / this.tickers.length;
+    let basket = 0;
     for (const t of this.tickers) {
+      if (per < 1) break;
       try {
         const qb = await quote(USDC_MINT, BOOK[t].mint, Math.round(per * 1e6), 50);
         const rb = await swap(this.fund.wallet, qb, { outMint: BOOK[t].mint, outProgram: TOKEN_2022_PROGRAM_ID });
-        inv.shares[t] += Number(rb.outRaw) / DEC; inv.usdc -= per;
-      } catch (e) { log.warn(`stock setup ${t}: ${e.message}`); }
+        if (this.v) { this.v.shares[t] += Number(rb.outRaw) / DEC; this.v.usdc -= per; }
+        basket += per;
+      } catch (e) { log.warn(`stock top-up ${t}: ${e.message}`); }
     }
-    if (cfg.dryRun) this.v = inv;
-    this.setupDone = true;
-    if (!cfg.stockClipUsd) this.clipUsd = Math.floor(per * 0.9);
-    log.info(`stock desk funded: ${cfg.stockCapitalSol} SOL → $${r2(usdc)} · basket $${r2(per * this.tickers.length)} across ${this.tickers.length} stocks, $${r2(inv.usdc)} USDC free`);
-    await ledger.event('stock-setup', { detail: { sol: cfg.stockCapitalSol, usdc: r2(usdc), basket_usd: r2(per * this.tickers.length), tickers: this.tickers } });
+    this.fundedSol += sol;
+    this.resize(book + usdc);
+    log.info(`stock book +${sol.toFixed(3)} SOL → $${r2(usdc)} ($${r2(basket)} into the basket) · book ≈ $${r2(book + usdc)} · clip $${this.clipUsd}`);
+    await ledger.event('stock-setup', { txs: [r.sig], detail: { sol: r2(sol * 1000) / 1000, usdc: r2(usdc), basket_usd: r2(basket), book_usd: r2(book + usdc), clip_usd: this.clipUsd, tickers: this.tickers } });
+  }
+
+  /** Trade size: 90% of one stock's slice of the book's basket (or STOCK_CLIP_USD if set). */
+  resize(bookUsd) {
+    if (cfg.stockClipUsd) { this.clipUsd = cfg.stockClipUsd; return; }
+    this.clipUsd = Math.floor((bookUsd * cfg.stockInventoryPct / 100 / this.tickers.length) * 0.9);
   }
 
   /** Book value of the stock desk in USD (USDC + shares at the real price, or the last pool bid off-hours). */
@@ -128,7 +141,7 @@ export class StockDesk {
   async tick() {
     if (cfg.stockMode === 'off' || Date.now() - this.lastAt < cfg.stockTickSec * 1000) return;
     this.lastAt = Date.now();
-    try { await this.setup(); } catch (e) { log.error(`stock setup failed: ${e.message}`); }
+    const canTrade = !this.live() || this.clipUsd >= cfg.stockMinClipUsd;
     let fresh = 0;
     for (const t of this.tickers) {
       let r, q;
@@ -142,7 +155,7 @@ export class StockDesk {
       const base = h.length ? median(h) : mid, enter = cfg.stockEnterPct / 100;
       this.board[t] = { t, ref: r.px, ref_age: Math.round(r.age), bid: r2(q.sellPx), ask: r2(q.buyPx), premium: r2(mid * 100 * 100) / 100, usual: r2(base * 100 * 100) / 100,
         gap: r2((richGap - base > -(cheapGap - base) ? richGap - base : cheapGap - base) * 100 * 100) / 100, venue: q.venue, open: this.open.get(t)?.side ?? null, warm: h.length >= 20 };
-      if (!live || h.length < 20) continue;
+      if (!live || h.length < 20 || !canTrade || this.fund.lowGas?.()) continue;
       const st = this.streak.get(t);
       st.rich = richGap - base > enter ? st.rich + 1 : 0;
       st.cheap = cheapGap - base < -enter ? st.cheap + 1 : 0;
@@ -156,6 +169,7 @@ export class StockDesk {
       }
     }
     this.marketOpen = fresh > 0;
+    try { await this.topUp(); } catch (e) { log.error(`stock top-up failed: ${e.message}`); }   // after prices load, so the book is valued correctly
     // market closed with trades still open: close them against the last pool price after a 90 min grace
     if (!this.marketOpen) for (const [t, pos] of this.open) if (Date.now() - pos.at > 90 * 60e3) await this.close(t, pos, this.board[t]?.ref ?? pos.ref, 'market closed');
     try { await this.sweep(); } catch (e) { log.error(`stock sweep failed: ${e.message}`); }
@@ -228,6 +242,6 @@ export class StockDesk {
 
   view() {
     return { mode: cfg.stockMode, dry: cfg.dryRun, market_open: this.marketOpen, board: Object.values(this.board), open: [...this.open.values()].map((p) => ({ t: p.t, side: p.side, px: r2(p.px), ref: r2(p.ref), usd: r2(p.usd), gap: r2(Math.abs(p.entryGap) * 1e4) / 100, at: new Date(p.at).toISOString() })),
-      realised_usd: r2(this.realisedUsd), swept_usd: r2(this.sweptUsd), clip_usd: this.clipUsd, enter_pct: cfg.stockEnterPct, inventory: this.v ?? null };
+      realised_usd: r2(this.realisedUsd), swept_usd: r2(this.sweptUsd), clip_usd: this.clipUsd, funded_sol: r2(this.fundedSol * 1000) / 1000, min_clip_usd: cfg.stockMinClipUsd, enter_pct: cfg.stockEnterPct, inventory: this.v ?? null };
   }
 }

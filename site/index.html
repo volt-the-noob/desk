@@ -39,7 +39,7 @@ REFRESH_MS: 15000,
 <div>
 <p class="defn">desk, n. · the table a market maker sits at and lets the market come to it</p>
 <h1>Every trade pays the desk. <em>The desk pays you.</em></h1>
-<p class="lede">A market-making fund, issued as a token. The desk trades <b>tokenized stocks against Wall Street’s own price</b>, runs liquidity on Solana’s busiest pools, collects the creator fee on every trade of the coin, and once a day splits the result: <b id="lede-split">half to holders in SOL</b><span id="lede-rest">, 30% back into the book, 20% to OPS</span>.</p>
+<p class="lede">A market-making fund, issued as a token. The desk collects the creator fee on every trade of the coin and puts its reserve to work as liquidity in Solana’s calmest, best-paying pools, with a hard cap and an automatic circuit breaker. Once a day it splits the result: <b id="lede-split">half to holders in SOL</b><span id="lede-rest">, 30% back into the book, 20% to OPS</span>.</p>
 <div class="actions">
 <a class="btn" href="#book">See the live book</a>
 <a class="btn ghost" href="#how">How it pays</a>
@@ -102,6 +102,7 @@ REFRESH_MS: 15000,
 <h2>Wall Street sets the price. <em>The desk trades the gap.</em></h2>
 <p class="lede">NVDA, SPY, TSLA and AAPL trade on Solana as tokens backed one-to-one by real shares. When a pool drifts away from its usual level against the real stock, the desk sells into it or buys from it, and closes the trade when the gap is gone. Same shares as before, more USDC.</p>
 </div>
+<div class="soon" id="stk-soon" hidden></div>
 <div class="mkt" id="stk-status"><span class="dot off"></span><span>waiting for the keeper</span></div>
 <div class="stk-figs">
 <div><div class="k">book value</div><div class="v" id="stk-book">—</div><div class="u">USDC + shares at the real price</div></div>
@@ -116,13 +117,14 @@ REFRESH_MS: 15000,
 <section class="block" id="positions">
 <div class="head">
 <span class="tag">Positions · live</span>
-<h2><span id="seat-word">Up to eight</span> seats. <em>Whoever’s hottest sits.</em></h2>
-<p class="lede">Each row is a pool the desk is in right now: its floor, its band, and where price is. When the price marker leaves the band the keeper re-centers; when it hits the floor the seat is given up.</p>
+<h2>Calm pools and runners. <em>Each with its own leash.</em></h2>
+<p class="lede">Each row is a pool the desk is in right now: its floor, its band, and where price is. The desk provides liquidity on Meteora and PumpSwap. It puts a fixed share of the treasury to work and grows with it: sixty percent of that goes to verified, calm pools whose price moved less than 5% in a day, forty percent to the busiest memecoins, but only ones with real holders, real organic volume, no mint or freeze authority and no whale concentration, and every meme seat has a trailing stop and a six-hour limit. Each sleeve has its own cap and its own circuit breaker.</p>
 </div>
 <div class="soon" id="pools-soon" hidden></div>
+<div class="risk" id="pool-risk"></div>
 <div class="positions" id="position-rows"></div>
 <div class="two" style="margin-top:44px">
-<div><p class="sub-tag">scanner’s shortlist</p><div id="candidates"></div></div>
+<div><p class="sub-tag">calm shortlist</p><div id="candidates"></div><p class="sub-tag" style="margin-top:26px">meme shortlist · passed the filters</p><div id="meme-cands"></div></div>
 <div><p class="sub-tag">seats given up recently</p><div id="closed"></div></div>
 </div>
 </section>
@@ -198,10 +200,10 @@ REFRESH_MS: 15000,
 <details><summary>When are payouts?</summary><p>Every 24 hours, on the clock at the top of the page. If the pot is positive, it goes out. If it isn’t, nothing goes out and the clock resets.</p></details>
 <details><summary>What is the split?</summary><p>50% of the pot to holders. 30% stays in the desk as capital so it can take bigger seats. 20% to OPS, the operations budget that keeps the keeper, the RPC and the site running.</p></details>
 <details><summary>My payout was tiny, or didn’t come.</summary><p>Small amounts accrue instead of being sent, so gas doesn’t eat them. Your share adds up each payout and is sent once it crosses the dust floor. Paste your wallet above to see what has accrued.</p></details>
-<details><summary>What is the stock desk?</summary><p>Tokenized stocks (xStocks) trade on Solana around the clock, each backed by a real share. During US market hours the desk compares every pool to the real stock price. When a pool runs rich it sells a slice of its inventory there, when it runs cheap it buys, and it reverses the trade once the pool is back to normal. It never trades against a stale price: when the market is closed it waits. Realised profit is converted to SOL and goes into the same daily pot.</p></details>
+<details><summary>What is the stock desk?</summary><p>It opens on day two; until then it runs in paper mode and publishes every trade it would have made. Tokenized stocks (xStocks) trade on Solana around the clock, each backed by a real share. During US market hours the desk compares every pool to the real stock price. When a pool runs rich it sells a slice of its inventory there, when it runs cheap it buys, and it reverses the trade once the pool is back to normal. It never trades against a stale price: when the market is closed it waits. Realised profit is converted to SOL and goes into the same daily pot.</p></details>
 <details><summary>Does the desk trade the token?</summary><p id="faq-trade">No. It never buys or sells the token to move its price or make volume, and it doesn’t market-make the token’s own pool unless that pool makes the scanner’s list on merit like any other.</p></details>
 <details><summary>Where does the money actually come from?</summary><p>Fees paid by other people’s trades on Meteora pools where the desk provides liquidity, plus or minus what the desk’s inventory gained or lost while it sat in those pools. All of it is on-chain.</p></details>
-<details><summary>What happens on a bad day?</summary><p>A pool that falls through its floor is closed and sold. A losing day makes the pot negative; the next profitable days fill the hole before anyone gets paid. The 30% reserve share is the cushion.</p></details>
+<details><summary>What happens on a bad day?</summary><p>Only the reserve share ever goes into pools; what is owed to holders is never deployed. The pool desk works a set share of the treasury, split 60/40 between calm pools and memecoins, so its size rises and falls with the fund instead of being fixed. Meme seats have a 10% trailing stop, a 12% floor and a six-hour limit. Each sleeve has its own circuit breaker: the calm sleeve pauses for 24 hours at −5% of its cap over seven days, the meme sleeve for 48 hours at −20%. Memecoin liquidity is the risky part, and losses there come out of the pot before payouts. A losing day makes the pot negative; the next profitable days fill the hole before anyone gets paid.</p></details>
 <details><summary>Can the desk lose everything?</summary><p>It can lose a lot. Memecoin pools are the most volatile liquidity on Solana; the fees are high precisely because the risk is. Floors and position sizing limit the damage per seat. They don’t remove it.</p></details>
 </section>
 <footer>

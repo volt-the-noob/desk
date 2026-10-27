@@ -15,18 +15,46 @@ export const cfg = {
   // --- safety ---
   dryRun: bool('DRY_RUN', true),                // true = compute + log + ledger, never sign/send
   dryRunSol: num('DRY_RUN_SOL', 0),             // paper-trade with a virtual bankroll (dry-run only)
-  gasReserveSol: num('GAS_RESERVE_SOL', 0.15),  // SOL that never leaves the wallet
+  gasReserveSol: num('GAS_RESERVE_SOL', 0.05),  // SOL never traded or paid out: always kept for transaction fees
+  gasMinSol: num('GAS_MIN_SOL', 0.004),          // below this the keeper only claims fees (which costs ~0.00001 SOL) until topped up
 
   // --- pool desk switch: launch with stocks only, pools from POOLS_START_AT (ISO time) or when POOLS_ENABLED=true ---
   poolsEnabled: bool('POOLS_ENABLED', true),
   poolsStartAt: str('POOLS_START_AT'),
 
+  // --- pool desk risk limits ---
+  poolAllocPct: num('POOL_ALLOC_PCT', 70),               // % of the treasury (equity minus what is owed) the pool desk may deploy
+  poolMaxCapitalSol: num('POOL_MAX_CAPITAL_SOL', 0),     // optional hard ceiling in SOL on top of the % (0 = none)
+  poolVerifiedOnly: bool('POOL_VERIFIED_ONLY', true),    // only tokens on Jupiter's verified list
+  poolBreakerPct: num('POOL_BREAKER_PCT', 5),            // circuit breaker: loss over the window, as % of POOL_MAX_CAPITAL_SOL...
+  poolBreakerDays: num('POOL_BREAKER_DAYS', 7),          // ...measured over this many days (closed results + open positions)
+  poolBreakerPauseHours: num('POOL_BREAKER_PAUSE_HOURS', 24),
+
+  // --- meme sleeve: high-volume memecoins / on-chain coins, a fixed share of the pool desk with its own limits ---
+  memeSharePct: num('MEME_SHARE_PCT', 40),               // share of POOL_MAX_CAPITAL_SOL the meme sleeve may use (0 = off)
+  memeMaxSeats: num('MEME_MAX_SEATS', 0),               // 0 = no limit; seats are limited by capital and MIN_CAPITAL_PER_POOL_SOL
+  memeMinMcapUsd: num('MEME_MIN_MCAP_USD', 500_000),
+  memeMinVolumeUsd: num('MEME_MIN_VOLUME_USD', 500_000),
+  memeMinLiqUsd: num('MEME_MIN_LIQ_USD', 20_000),
+  memeMinHolders: num('MEME_MIN_HOLDERS', 1500),
+  memeMinOrganic: num('MEME_MIN_ORGANIC', 50),            // Jupiter organic score (0–100): share of real, non-bot activity
+  memeMaxTopHoldersPct: num('MEME_MAX_TOP_HOLDERS_PCT', 35),
+  memeMaxDevPct: num('MEME_MAX_DEV_PCT', 10),
+  memeMinAgeHours: num('MEME_MIN_AGE_HOURS', 1),
+  memeTrailPct: num('MEME_TRAIL_PCT', 10),               // exit when price falls this far below its high since entry
+  memeMaxHoldHours: num('MEME_MAX_HOLD_HOURS', 6),
+  memeFloorPct: num('MEME_FLOOR_PCT', 12),
+  memeRotateOutScans: num('MEME_ROTATE_OUT_SCANS', 6),   // ~30 min outside the filters → exit
+  memeBreakerPct: num('MEME_BREAKER_PCT', 20),           // breaker: loss over the window as % of the sleeve's cap
+  memeBreakerPauseHours: num('MEME_BREAKER_PAUSE_HOURS', 48),
+
   // --- which pools (scanner) ---
   scanIntervalSec: num('SCAN_INTERVAL_SEC', 300),
   // seats scale with capital: seats = clamp(floor(capital / SEAT_SOL), MIN_SEATS, MAX_SEATS)
-  seatSol: num('SEAT_SOL', 4),
+  seatSol: num('SEAT_SOL', 4),                          // one more seat per this much sleeve capital...
+  seatSolMax: num('SEAT_SOL_MAX', 25),                  // ...but a seat never exceeds this, so big treasuries spread wider, not thinner
   minSeats: num('MIN_SEATS', 2),
-  maxSeats: num('MAX_SEATS', num('MAX_POOLS', 8)),
+  maxSeats: num('MAX_SEATS', num('MAX_POOLS', 0)),      // 0 = no limit on open seats; capital and MIN_CAPITAL_PER_POOL_SOL decide
   seatWeights: list('SEAT_WEIGHTS').map(Number).filter((x) => x > 0), // capital share by rank; default below
   maxSeatPct: num('MAX_SEAT_PCT', 30),                      // no single seat above this % of capital
   minCapitalPerPoolSol: num('MIN_CAPITAL_PER_POOL_SOL', 1.5), // don't open a seat smaller than this
@@ -107,12 +135,17 @@ export const cfg = {
   stockTickers: list('STOCK_TICKERS'),
   stockRefSource: str('STOCK_REF_SOURCE', 'yahoo'), // finnhub (FINNHUB_KEY) | pyth (PYTH_API_KEY) | yahoo (fallback)
   finnhubKey: str('FINNHUB_KEY'),
-  stockCapitalSol: num('STOCK_CAPITAL_SOL', 10),    // SOL converted into the stock book on first run
+  stockCapitalSol: num('STOCK_CAPITAL_SOL', 10),    // the most SOL the stock book grows to (funded from fee income, never upfront)
+  stockTopupMinSol: num('STOCK_TOPUP_MIN_SOL', 0.3), // move free SOL into the book in steps of at least this much
+  stockTopupSec: num('STOCK_TOPUP_SEC', 600),
+  stockFreeSharePct: num('STOCK_FREE_SHARE_PCT', 100), // share of free SOL the book may take (pools get the rest from day 2)
+  stockMinClipUsd: num('STOCK_MIN_CLIP_USD', 15),     // no trading until each clip is at least this big
   stockInventoryPct: num('STOCK_INVENTORY_PCT', 50), // share of the book held as xStocks (rest stays USDC)
   stockSweepUsd: num('STOCK_SWEEP_USD', 10),        // realised stock P&L is moved into the pot in SOL once this much has built up
   pythApiKey: str('PYTH_API_KEY'),
   jupApiKey: str('JUP_API_KEY'),                     // optional: higher Jupiter rate limits
   jupMinIntervalMs: num('JUP_MIN_INTERVAL_MS', 1100),
+  jupMaxPriorityLamports: num('JUP_MAX_PRIORITY_LAMPORTS', 200000), // cap per swap: 0.0002 SOL
 
   // --- loop ---
   tickMs: num('TICK_MS', 15_000),
@@ -129,15 +162,19 @@ if (!cfg.seatWeights.length) cfg.seatWeights = [30, 22, 16, 12, 8, 6, 3, 3];
 
 /** How many seats the fund should run at this capital. */
 export function seatCount(capitalSol) {
-  return Math.max(cfg.minSeats, Math.min(cfg.maxSeats, Math.floor(capitalSol / cfg.seatSol)));
+  const byCapital = Math.max(cfg.minSeats, Math.floor(capitalSol / cfg.seatSol));
+  const needed = cfg.seatSolMax > 0 ? Math.ceil(capitalSol / cfg.seatSolMax) : byCapital;   // enough seats that none is oversized
+  const n = Math.max(cfg.minSeats, Math.min(byCapital, Math.max(needed, cfg.minSeats)));
+  return cfg.maxSeats > 0 ? Math.min(cfg.maxSeats, n) : n;
 }
 
 /** Capital share for seat `rank` (0 = best) when `seats` seats are open: weights renormalised, capped. */
 export function seatShare(rank, seats) {
+  // Rank-weighted sizing: the best-scoring seat gets the most. Beyond the configured weights the tail is even,
+  // so any number of seats is supported. No seat may exceed MAX_SEAT_PCT of the sleeve's capital.
   const w = Array.from({ length: seats }, (_, i) => cfg.seatWeights[Math.min(i, cfg.seatWeights.length - 1)]);
-  const total = w.reduce((a, b) => a + b, 0);
-  const cap = Math.max(cfg.maxSeatPct / 100, 1 / seats); // with 2 seats a 30% cap would idle capital
-  return Math.min(cap, w[Math.min(rank, seats - 1)] / total);
+  const total = w.reduce((a, b) => a + b, 0) || 1;
+  return Math.min(Math.max(cfg.maxSeatPct / 100, 1 / seats), w[Math.min(rank, seats - 1)] / total);
 }
 
 export function assertConfig() {
@@ -152,7 +189,8 @@ export function assertConfig() {
   if (!['balanced', 'bid'].includes(cfg.entryMode)) throw new Error('ENTRY_MODE must be balanced|bid');
   if (!['inventory', 'balanced'].includes(cfg.rebalanceMode)) throw new Error('REBALANCE_MODE must be inventory|balanced');
   if (cfg.binsBelow + cfg.binsAbove + 1 > 69) throw new Error('BINS_BELOW + BINS_ABOVE must be ≤ 68');
-  if (cfg.minSeats < 1 || cfg.maxSeats < cfg.minSeats) throw new Error('MIN_SEATS/MAX_SEATS invalid');
+  if (cfg.minSeats < 1 || (cfg.maxSeats > 0 && cfg.maxSeats < cfg.minSeats)) throw new Error('MIN_SEATS/MAX_SEATS invalid');
+  if (cfg.poolAllocPct < 0 || cfg.poolAllocPct > 100) throw new Error('POOL_ALLOC_PCT must be 0-100');
   if (!cfg.holderTokenMint) console.warn('HOLDER_TOKEN_MINT not set: holder share accrues in the pot until it is');
   if (!cfg.opsWallet) console.warn('OPS_WALLET not set: ops share stays in the desk as reserve');
 }
