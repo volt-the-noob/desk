@@ -1,0 +1,28 @@
+# Fly.io config for the DESK keeper.
+# One always-on machine: this is a keeper, not a web app, so it must never auto-stop.
+app = "desk-keeper"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false      # a stopped keeper means missed claims and missed payouts
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    timeout = "10s"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"               # 256mb is tight once the holder index is warm
