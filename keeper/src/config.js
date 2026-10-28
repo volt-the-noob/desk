@@ -120,6 +120,21 @@ export const cfg = {
   incomeMinSweepSol: num('INCOME_MIN_SWEEP_SOL', 0.05),
   incomeKeepSol: num('INCOME_KEEP_SOL', 0.01),
 
+  // --- chain / venue: 'solana' (Meteora + PumpSwap) or 'robinhood' (pons v2 creator tax, Uniswap, USDG payouts) ---
+  chain: str('CHAIN', 'solana'),
+  evmRpcUrl: str('EVM_RPC_URL', 'https://rpc.mainnet.chain.robinhood.com'),
+  evmPrivateKey: str('EVM_PRIVATE_KEY'),
+  evmTokenAddress: str('EVM_TOKEN_ADDRESS'),            // your pons v2 token
+  evmTokenDeployBlock: num('EVM_TOKEN_DEPLOY_BLOCK', 0),
+  evmFeeEscrow: str('EVM_FEE_ESCROW'),                  // override; otherwise read from the curve
+  evmOpsWallet: str('EVM_OPS_WALLET'),
+  evmGasReserveEth: num('EVM_GAS_RESERVE_ETH', 0.002),  // ETH kept for gas, never swapped or paid out
+  evmMinPayoutUsdg: num('EVM_MIN_PAYOUT_USDG', 0.25),   // below this a holder's share accrues instead of being sent
+  evmClaimDustEth: num('EVM_CLAIM_DUST_ETH', 0.0005),   // never spend gas claiming less than this
+  evmSlippageBps: num('EVM_SLIPPAGE_BPS', 100),
+  evmFeeTiers: list('EVM_FEE_TIERS').map(Number).filter(Boolean).length ? list('EVM_FEE_TIERS').map(Number) : [100, 500, 3000, 10000],
+  evmLogChunk: num('EVM_LOG_CHUNK', 50000),             // the public RPC rejects wide eth_getLogs ranges
+
   // --- creator-fee auto-claim (pump.fun fee sharing: permissionless distribute) ---
   claimEnabled: bool('CLAIM_ENABLED', true),
   claimCheckSec: num('CLAIM_CHECK_SEC', 60),
@@ -180,6 +195,11 @@ export function seatShare(rank, seats) {
 }
 
 export function assertConfig() {
+  if (cfg.chain === 'robinhood') {
+    if (!cfg.evmPrivateKey) throw new Error('EVM_PRIVATE_KEY not set');
+    if (cfg.holderSharePct + cfg.reserveSharePct + cfg.opsSharePct + cfg.buybackSharePct !== 100) throw new Error('shares must sum to 100');
+    return;
+  }
   const missing = [];
   if (!cfg.walletSecret) missing.push('WALLET_SECRET');
   if (!cfg.supabaseUrl) missing.push('SUPABASE_URL');

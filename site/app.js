@@ -14,6 +14,9 @@ const sgn = (v, d = 4) => (Number(v) > 0 ? '+' : '') + n(v, d);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let first = true, solUsd = null, lastState = null;
+let U = 'SOL', CHAIN = 'solana';          // the desk's unit: SOL on Solana, USDG on Robinhood Chain
+const dp = (d) => (U === 'SOL' ? d : Math.min(d, 2));   // USDG reads better with 2 decimals
+const isEvm = () => CHAIN === 'robinhood';
 $('ticks').innerHTML = Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * Math.PI * 2; const r1 = i % 4 === 0 ? 118 : 124, r2 = 130; return `<line class="tick" x1="${160 + r1 * Math.cos(a)}" y1="${160 + r1 * Math.sin(a)}" x2="${160 + r2 * Math.cos(a)}" y2="${160 + r2 * Math.sin(a)}"/>`; }).join('');
 const counted = new Map();
 function setNum(id, value, d = 4) {
@@ -46,36 +49,49 @@ const dot = st.dry_run ? 'dry' : st.status !== 'running' || stale ? 'off' : '';
 const label = st.dry_run ? 'dry run' : st.status === 'running' ? (stale ? 'stalled' : 'desk · live') : st.status;
 $('status').innerHTML = `<span class="dot ${dot}"></span>${esc(label)}`;
 const equity = Number(st.equity_sol);
+U = st.unit || cfg.unit || 'SOL';
+CHAIN = st.chain || cfg.chain || 'solana';
 if (st.sol_usd) solUsd = Number(st.sol_usd);
 lastState = st;
-setNum('aum', equity, 2);
-$('aum-usd').textContent = solUsd ? `≈ $${n(equity * solUsd, 0)} · SOL at $${n(solUsd, 2)}` : '';
-const usd = (v) => (solUsd && v != null ? `≈ $${n(Number(v) * solUsd, 0)}` : '');
+setNum('aum', equity, dp(2));
+$('aum-usd').textContent = isEvm() ? (solUsd ? `ETH at $${n(solUsd, 0)}` : '') : (solUsd ? `≈ $${n(equity * solUsd, 0)} · SOL at $${n(solUsd, 2)}` : '');
+const usd = (v) => (isEvm() ? `≈ $${n(Number(v ?? 0), 0)}` : (solUsd && v != null ? `≈ $${n(Number(v) * solUsd, 0)}` : ''));
 const profit = Number(st.profit_total_sol ?? (Number(st.fees_total_sol) + Number(st.band_pnl_total_sol)));
-setNum('worth', equity, 2); $('worth-usd').textContent = usd(equity);
-const pe = $('profit'); setNum('profit', profit, 3); pe.className = 'v ' + cls(profit); $('profit-usd').textContent = usd(profit);
-$('paid-usd').textContent = `$${n(st.paid_total_usd ?? 0, 0)} at payout prices`;
-setNum('ops-paid', Number(st.ops_total_sol), 3); $('ops-usd').textContent = `$${n(st.ops_total_usd ?? 0, 0)}`;
+setNum('worth', equity, dp(2)); $('worth-usd').textContent = isEvm() ? 'USDG + gas ETH' : usd(equity);
+const pe = $('profit'); setNum('profit', profit, dp(3)); pe.className = 'v ' + cls(profit); $('profit-usd').textContent = isEvm() ? 'USDG, all from tax' : usd(profit);
+$('paid-usd').textContent = isEvm() ? `${n(st.paid_total_sol ?? 0, 2)} USDG paid out` : `$${n(st.paid_total_usd ?? 0, 0)} at payout prices`;
+setNum('ops-paid', Number(st.ops_total_sol), dp(3)); $('ops-usd').textContent = isEvm() ? 'USDG' : `$${n(st.ops_total_usd ?? 0, 0)}`;
 const bbOn = Number(cfg.buyback_share_pct ?? 0) > 0 || Number(st.buyback_total_sol) > 0;
 document.querySelectorAll('.figs > .bb').forEach((el) => { el.hidden = !bbOn; });
-setNum('bb-sol', Number(st.buyback_total_sol ?? 0), 3); $('bb-usd').textContent = `$${n(st.buyback_total_usd ?? 0, 0)}`;
+setNum('bb-sol', Number(st.buyback_total_sol ?? 0), dp(3)); $('bb-usd').textContent = isEvm() ? `${n(st.burned_total_tokens ?? 0, 0)} tokens burned` : `$${n(st.buyback_total_usd ?? 0, 0)}`;
 $('burned').textContent = Number(st.burned_total_tokens ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); $('burned-k').textContent = `${C.TICKER} tokens`;
 $('holders').textContent = st.holders_count != null ? Number(st.holders_count).toLocaleString('en-US') : '—';
 $('free-dep').textContent = `${n(st.free_sol, 1)} · ${n(st.deployed_sol, 1)}`;
 const start = Number(st.start_equity_sol || 0);
 const roi = start > 0 ? ((equity + Number(st.paid_total_sol || 0) + Number(st.ops_total_sol || 0) + Number(st.buyback_total_sol || 0)) / start - 1) * 100 : null;
 const re = $('roi'); re.textContent = roi == null ? '—' : (roi > 0 ? '+' : '') + roi.toFixed(1) + '%'; re.className = 'v ' + cls(roi ?? 0);
-setNum('income', Number(st.income_total_sol ?? 0), 3); $('income-usd').textContent = usd(Number(st.income_total_sol ?? 0));
+setNum('income', Number(st.income_total_sol ?? 0), dp(3)); $('income-usd').textContent = isEvm() ? 'USDG, swapped on claim' : usd(Number(st.income_total_sol ?? 0));
 const sp = Number(st.stock_pnl_usd ?? 0), spe = $('stock-pnl'); spe.textContent = (sp >= 0 ? '+$' : '−$') + n(Math.abs(sp), 2); spe.className = 'v ' + cls(sp);
 $('stock-pnl-k').textContent = `USD · ${st.stock_trades ?? 0} trades${st.stock_mode === 'paper' ? ' · paper' : ''}`;
 renderStocks(st);
 renderPoolsSoon(st);
 renderRisk(st);
-$('roi-k').textContent = start > 0 ? `on ${n(start, 1)} SOL, incl. everything paid out` : 'since launch';
+const unitEl = document.querySelector('.aum .v small'); if (unitEl) unitEl.textContent = U;
+for (const [id, hide] of [['fees-tile', isEvm()], ['band-tile', isEvm()], ['seats-tile', isEvm()], ['stock-tile', isEvm()], ['free-tile', isEvm()]]) { const e = $(id); if (e) e.hidden = hide; }
+renderPons(st);
+for (const [id, hide] of [['positions', isEvm()], ['stocks', isEvm()]]) { const e = $(id); if (e) e.hidden = hide; }
+document.querySelectorAll('nav.main a[href="#positions"], nav.main a[href="#stocks"]').forEach((a) => { a.hidden = isEvm(); });
+if (isEvm()) {
+  const l = $('lede-rest'); if (l) l.textContent = `, ${cfg.reserve_share_pct ?? 30}% stays in the treasury, ${cfg.ops_share_pct ?? 20}% to OPS` + ((cfg.buyback_share_pct ?? 0) ? `, ${cfg.buyback_share_pct}% buys the token back and burns it` : '');
+  const h = document.querySelector('.hero .lede b');
+  const d = document.querySelector('.hero .lede');
+  if (d && !d.dataset.evm) { d.dataset.evm = '1'; d.innerHTML = d.innerHTML.replace('The desk collects the creator fee on every trade of the coin and puts its reserve to work as liquidity in Solana’s calmest, best-paying pools, with a hard cap and an automatic circuit breaker.', 'The desk takes a share of every trade of the coin, claims it on-chain every few minutes and swaps it to USDG on the spot.'); }
+}
+$('roi-k').textContent = start > 0 ? `on ${n(start, dp(1))} ${U}, incl. everything paid out` : 'since launch';
 const H = cfg.holder_share_pct ?? 50, R = cfg.reserve_share_pct ?? 30, O = cfg.ops_share_pct ?? 20, B = cfg.buyback_share_pct ?? 0;
-$('lede-split').textContent = H === 50 ? 'half to holders in SOL' : `${H}% to holders in SOL`;
+$('lede-split').textContent = H === 50 ? `half to holders in ${U}` : `${H}% to holders in ${U}`;
 $('lede-rest').textContent = `, ${R}% back into the book, ${O}% to OPS` + (B ? `, ${B}% to buy back and burn ${C.TICKER}` : '');
-$('split-chips').innerHTML = `<span><b>${H}%</b> holders · in SOL</span><span><b>${R}%</b> reserve · the book</span><span><b>${O}%</b> OPS</span>` + (B ? `<span><b>${B}%</b> buyback · burned</span>` : '');
+$('split-chips').innerHTML = `<span><b>${H}%</b> holders · in ${U}</span><span><b>${R}%</b> reserve · the book</span><span><b>${O}%</b> OPS</span>` + (B ? `<span><b>${B}%</b> buyback · burned</span>` : '');
 if (B) $('faq-trade').textContent = `Only in one way: ${B}% of every payout buys ${C.TICKER} on the open market and burns it, on the same daily clock, in one transaction you can open on Solscan. Outside that it never buys or sells the token, and it never trades to move a price.`;
 const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
 if ($('seat-word')) $('seat-word').textContent = cfg.max_seats ? `${words[cfg.max_seats] ?? cfg.max_seats}` : 'Three';
@@ -88,7 +104,7 @@ const left = Math.max(0, next - Date.now());
 const frac = Math.min(1, Math.max(0, 1 - left / interval));
 $('prog').style.strokeDashoffset = (879.6 * (1 - frac)).toFixed(1);
 $('next-payout').textContent = left <= 0 ? 'now' : `${Math.floor(left / 3600e3)}h ${String(Math.floor((left % 3600e3) / 60e3)).padStart(2, '0')}m`;
-setNum('paid', Number(st.paid_total_sol), 3);
+setNum('paid', Number(st.paid_total_sol), dp(3));
 $('open').textContent = `${st.open_pools ?? 0} / ${cfg.max_pools ?? '—'}`;
 setNum('fees', Number(st.fees_total_sol), 3);
 const bp = $('band-pnl'); setNum('band-pnl', Number(st.band_pnl_total_sol), 3); bp.className = 'v ' + cls(st.band_pnl_total_sol);
@@ -126,7 +142,20 @@ const desk = r.open ? `<span class="badge ${r.open}">${r.open === 'sell' ? 'sold
 return `<tr><td class="t">${esc(r.t)}x</td><td>$${n(r.ref, 2)}${r.ref_age > 180 ? ' <span class="empty">closed</span>' : ''}</td><td>$${n(r.bid, 2)}</td><td>$${n(r.ask, 2)}</td><td>${r.usual >= 0 ? '+' : ''}${n(r.usual, 2)}%</td><td>${r.premium >= 0 ? '+' : ''}${n(r.premium, 2)}%</td><td>${bar}</td><td>${desk}</td></tr>`;
 }).join('') : '<tr><td colspan="8" class="empty">No prices yet.</td></tr>';
 }
+function renderPons(st) {
+const el = $('pons'); if (!el) return;
+const t = st.fee_claim;
+if (!isEvm() || !t) { el.hidden = true; return; }
+el.hidden = false;
+const prog = t.graduation_progress != null ? Math.max(0, Math.min(1, t.graduation_progress)) : null;
+$('pons-rows').innerHTML =
+  `<div><div class="k">creator tax</div><div class="v">${t.tax_pct != null ? n(t.tax_pct, 1) + '%' : '—'}</div><div class="u">of every trade, to the desk</div></div>`
++ `<div><div class="k">claimed so far</div><div class="v pos">${n(t.claimed_eth ?? 0, 4)}</div><div class="u">ETH · ${n(t.claimed_usdg ?? 0, 0)} USDG into the pot</div></div>`
++ `<div><div class="k">waiting to claim</div><div class="v">${n((t.pending_eth ?? 0) + (t.escrow_eth ?? 0), 5)}</div><div class="u">ETH · claimed at $${n(t.min_usd ?? 0, 0)} or every 5 min</div></div>`
++ `<div><div class="k">${t.graduated ? 'graduated' : 'graduation'}</div><div class="v ${t.graduated ? 'pos' : ''}">${t.graduated ? 'done' : (prog != null ? n(prog * 100, 1) + '%' : '—')}</div><div class="u">${t.graduated ? 'trading in the Uniswap pool' : 'of 4.2 ETH on the curve'}</div></div>`;
+}
 function renderRisk(st) {
+if (isEvm()) { const e = $('pool-risk'); if (e) e.innerHTML = ''; return; }
 const r = st.pool_risk; const el = $('pool-risk'); if (!r || !r.calm) { el.innerHTML = ''; return; }
 const cell = (name, x, note) => { const paused = x.paused_until && Date.parse(x.paused_until) > Date.now();
   return `<div><div class="k">${name} sleeve</div><div class="v">${n(x.cap_sol, x.cap_sol >= 10 ? 1 : 2)} SOL</div><div class="u">${note}</div></div>`
@@ -199,16 +228,18 @@ case 'harvest': return [K('harvest'), `${sym}${m('fees', d.fees_sol)}`];
 case 'pool-exit': return [K('exit', 'bad'), `${sym}${esc(d.reason)}${m('band', d.band_pnl_sol)}${m('fees', d.fees_sol)}`];
 case 'floor': return [K('floor', 'bad'), `${sym}sold ${n(d.sold_x, 0)} for ${n(d.sold_sol, 3)} SOL`];
 case 'exit-sell': return [K('sell'), `${sym}inventory → ${n(d.sold_sol, 3)} SOL`];
-case 'payout': return [K('payout', 'pay'), `holders <span class="pos">${n(d.holders_paid_sol, 3)}</span> SOL to ${d.wallets} wallets · ops ${n(d.ops_sol, 3)} · reserve ${n(d.reserve_sol, 3)}`];
-case 'payout-skipped': return [K('payout'), `skipped · pot ${n(d.pot, 3)} SOL`];
+case 'payout': return [K('payout', 'pay'), `holders <span class="pos">${n(d.holders_paid_sol, dp(3))}</span> ${U} to ${d.wallets} wallets · ops ${n(d.ops_sol, 3)} · reserve ${n(d.reserve_sol, 3)}`];
+case 'payout-skipped': return [K('payout'), `skipped · pot ${n(d.pot, dp(3))} ${U}`];
 case 'stock-open': return [K(d.side === 'sell' ? 'sell rich' : 'buy cheap'), `<span class="sym">${esc(d.ticker)}x</span> $${n(d.usd, 0)} @ $${n(d.px, 2)} · <span class="n">real</span> $${n(d.ref, 2)} · <span class="n">gap</span> ${n(d.gap_pct, 2)}% · <span class="n">${esc(d.venue || '')}</span>`];
 case 'stock-close': return [K('close', Number(d.pnl_usd) >= 0 ? 'pay' : 'bad'), `<span class="sym">${esc(d.ticker)}x</span> ${esc(d.reason)} after ${d.held_min}m · <span class="${cls(d.pnl_usd)}">${sgn(d.pnl_usd, 2)} USD</span>`];
 case 'stock-setup': return [K('stock desk'), `funded ${n(d.sol, 2)} SOL → $${n(d.usdc, 0)} · basket $${n(d.basket_usd, 0)} in ${(d.tickers || []).join(', ')}`];
-case 'income': return [K('income', 'pay'), `${esc(d.source)} <span class="pos">+${n(d.sol, 4)} SOL</span> → pot`];
-case 'buyback': return [K('buyback', 'pay'), `${n(d.sol, 3)} SOL via ${esc(d.venue || 'PumpSwap')} · burned ${Number(d.tokens_burned || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`];
+case 'income': return [K('income', 'pay'), `${esc(d.source)} <span class="pos">+${n(d.usdg ?? d.sol, dp(4))} ${U}</span> → pot`];
+case 'buyback': return [K('buyback', 'pay'), `${n(d.sol, dp(3))} ${U} via ${esc(d.venue || (isEvm() ? 'Uniswap' : 'PumpSwap'))} · burned ${Number(d.tokens_burned || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`];
 case 'pools-on': return [K('pools on', 'pay'), 'liquidity desk opened'];
 case 'pools-breaker': return [K('breaker', 'bad'), `${esc(d.sleeve || 'pool')} sleeve ${n(d.result_sol, 3)} SOL over the window (limit ${n(d.limit_sol, 3)}): its seats closed, paused`];
-case 'fee-claim': return [K('fees', 'pay'), `creator fees distributed <span class="pos">${n(d.sol, 4)} SOL</span> · desk share ${n(d.desk_sol, 4)}`];
+case 'fee-claim': return d.chain === 'robinhood'
+  ? [K('tax', 'pay'), `creator tax claimed <span class="pos">${n(d.eth, 5)} ETH</span>${d.usd ? ` · $${n(d.usd, 2)}` : ''} → swapped to USDG`]
+  : [K('fees', 'pay'), `creator fees distributed <span class="pos">${n(d.sol, 4)} SOL</span> · desk share ${n(d.desk_sol, 4)}`];
 default: return [K(esc(e.kind)), ''];
 }
 };
@@ -249,7 +280,7 @@ const state = out ? ['out of band · re-centering', 'out'] : ['in band · earnin
 return `<div class="position">
 <a class="name" href="${p.venue === 'pumpswap' ? 'https://swap.pump.fun/?input=So11111111111111111111111111111111111111112&output=' + esc(p.token_mint || '') : 'https://app.meteora.ag/dlmm/' + esc(p.pool_address)}" target="_blank" rel="noopener">${esc(p.symbol)}<span class="slv ${p.sleeve === 'meme' ? 'meme' : ''}">${p.sleeve === 'meme' ? 'meme' : 'calm'}</span><span class="slv ven">${full ? 'pumpswap' : 'meteora'}</span><small>${n(cap, 2)} SOL in · opened ${ago(p.opened_at)}</small></a>
 <div class="pbox">
-<div class="pnow"><span class="live"></span>${val != null ? `worth <b>${n(val, 3)} SOL</b>${solUsd ? ` <u>$${n(val * solUsd, 0)}</u>` : ''}` : 'valuing…'}<i class="${cls(pnl)}">${sgn(pnl, 3)} SOL · ${pnl >= 0 ? '+' : ''}${n(pnlPct, 1)}%</i></div>
+<div class="pnow"><span class="live"></span>${val != null ? `worth <b>${n(val, dp(3))} ${U}</b>${solUsd ? ` <u>$${n(val * solUsd, 0)}</u>` : ''}` : 'valuing…'}<i class="${cls(pnl)}">${sgn(pnl, 3)} SOL · ${pnl >= 0 ? '+' : ''}${n(pnlPct, 1)}%</i></div>
 <svg viewBox="0 0 ${W} 60" preserveAspectRatio="none" aria-label="${esc(p.symbol)} position">
 <line class="axis" x1="${cx}" x2="${cx + cw}" y1="34" y2="34"/>
 ${flPct > lo ? `<rect class="floor" x="${cx}" y="24" width="${X(flPct) - cx}" height="20"/><line class="stop" x1="${X(flPct)}" x2="${X(flPct)}" y1="20" y2="48"/>` : ''}

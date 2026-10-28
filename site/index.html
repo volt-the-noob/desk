@@ -81,16 +81,16 @@ REFRESH_MS: 15000,
 <div><div class="k">portfolio worth</div><div class="v" id="worth">—</div><div class="u" id="worth-usd"></div></div>
 <div><div class="k">total profit</div><div class="v" id="profit">—</div><div class="u" id="profit-usd"></div></div>
 <div><div class="k">sent to holders</div><div class="v" id="paid">—</div><div class="u" id="paid-usd"></div></div>
-<div><div class="k">fees earned</div><div class="v pos" id="fees">—</div><div class="u">from trades</div></div>
-<div><div class="k">band result</div><div class="v" id="band-pnl">—</div><div class="u">inventory gain/loss</div></div>
+<div id="fees-tile"><div class="k">fees earned</div><div class="v pos" id="fees">—</div><div class="u">from trades</div></div>
+<div id="band-tile"><div class="k">band result</div><div class="v" id="band-pnl">—</div><div class="u">inventory gain/loss</div></div>
 <div><div class="k">sent to OPS</div><div class="v" id="ops-paid">—</div><div class="u" id="ops-usd"></div></div>
 <div class="bb"><div class="k">bought back</div><div class="v" id="bb-sol">—</div><div class="u" id="bb-usd"></div></div>
 <div class="bb"><div class="k">burned</div><div class="v" id="burned">—</div><div class="u" id="burned-k">tokens</div></div>
 <div><div class="k">holders</div><div class="v" id="holders">—</div><div class="u">eligible wallets</div></div>
-<div><div class="k">free · deployed</div><div class="v" id="free-dep">—</div><div class="u">SOL</div></div>
-<div><div class="k">seats</div><div class="v" id="open">—</div><div class="u">open / target</div></div>
+<div id="free-tile"><div class="k">free · deployed</div><div class="v" id="free-dep">—</div><div class="u">SOL</div></div>
+<div id="seats-tile"><div class="k">seats</div><div class="v" id="open">—</div><div class="u">open / target</div></div>
 <div><div class="k">creator-fee income</div><div class="v pos" id="income">—</div><div class="u" id="income-usd"></div></div>
-<div><div class="k">stock desk P&amp;L</div><div class="v" id="stock-pnl">—</div><div class="u" id="stock-pnl-k">USD, realised</div></div>
+<div id="stock-tile"><div class="k">stock desk P&amp;L</div><div class="v" id="stock-pnl">—</div><div class="u" id="stock-pnl-k">USD, realised</div></div>
 <div><div class="k">return on start</div><div class="v" id="roi">—</div><div class="u" id="roi-k">since launch</div></div>
 </div>
 </div>
@@ -113,6 +113,14 @@ REFRESH_MS: 15000,
 <div class="scroll"><table class="stk"><thead><tr><th>Stock</th><th>Real price</th><th>Pool bid</th><th>Pool ask</th><th>Usual</th><th>Now</th><th>Gap vs usual</th><th>Desk</th></tr></thead><tbody id="stk-board"><tr><td colspan="8" class="empty">No prices yet.</td></tr></tbody></table></div>
 <p class="sub-tag" style="margin-top:34px">recent stock trades</p>
 <div id="stk-trades-table"></div>
+</section>
+<section class="block" id="pons" hidden>
+<div class="head">
+<span class="tag">Creator tax · live</span>
+<h2>Every trade pays the desk. <em>Automatically.</em></h2>
+<p class="lede">The token carries a creator tax on every trade. It accrues on-chain, the keeper claims it and swaps it straight to USDG, so what holders are owed never drifts with the price of ETH.</p>
+</div>
+<div class="risk" id="pons-rows"></div>
 </section>
 <section class="block" id="positions">
 <div class="head">
