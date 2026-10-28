@@ -65,10 +65,15 @@ shares summing to exactly 100% · income into the pot, exact 50/30/10/10 splits,
 (nothing vanishes), state writes, and a clean skip on an empty pot.
 
 ## Site (done)
-One codebase serves both chains, switching on `desk_state.chain`:
-- units follow the desk (`SOL` or `USDG`) in every figure, the blotter and the position rows
+One codebase serves both chains, switching on `desk_state.chain`. Nothing is forked: the Solana view is byte-for-byte
+what it was (verified side by side after every change).
+- units follow the desk (`SOL` or `USDG`) everywhere: figures, blotter, payout clock, position rows
 - a **Creator tax** panel on RH: tax %, claimed so far (ETH → USDG into the pot), waiting to claim, graduation progress
-- pool/stock sections and their tiles hide on RH; the Solana view is unchanged (verified side by side)
+- pool/stock sections, their tiles and their nav links hide on RH
+- **all explanatory copy is rewritten for RH**: the hero and lede, the four-step "How it pays" rail (the tax → the
+  claim → the swap → the clock), the About prose, and the FAQ (where the money comes from, the split read from live
+  config, a bad day, whether the desk can lose everything, whether it trades the token). The stock-desk question hides.
+- page title, header subtitle and HUD change; the buy button points at the pons launchpad once CONTRACT_ADDRESS is set
 
 ## Still to do
 - pool desk on Uniswap v4 / Ramses DLMM (the sleeve, breaker and risk logic port over unchanged)

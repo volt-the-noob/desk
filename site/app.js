@@ -78,25 +78,44 @@ renderPoolsSoon(st);
 renderRisk(st);
 const unitEl = document.querySelector('.aum .v small'); if (unitEl) unitEl.textContent = U;
 for (const [id, hide] of [['fees-tile', isEvm()], ['band-tile', isEvm()], ['seats-tile', isEvm()], ['stock-tile', isEvm()], ['free-tile', isEvm()]]) { const e = $(id); if (e) e.hidden = hide; }
+applyChainCopy();
+if (st.fee_claim?.tax_pct) cfg.tax_pct = st.fee_claim.tax_pct;
 renderPons(st);
 for (const [id, hide] of [['positions', isEvm()], ['stocks', isEvm()]]) { const e = $(id); if (e) e.hidden = hide; }
 document.querySelectorAll('nav.main a[href="#positions"], nav.main a[href="#stocks"]').forEach((a) => { a.hidden = isEvm(); });
 if (isEvm()) {
+  document.querySelectorAll('#faq details').forEach((d) => {
+    if (/What is the split/i.test(d.querySelector('summary')?.textContent || '')) {
+      const p = d.querySelector('p');
+      if (p) p.textContent = `${cfg.holder_share_pct ?? 50}% of the pot to holders, paid in USDG. ${cfg.reserve_share_pct ?? 30}% stays in the treasury. ${cfg.ops_share_pct ?? 20}% to OPS, the budget that keeps the keeper, the RPC and this site running.` + ((cfg.buyback_share_pct ?? 0) ? ` ${cfg.buyback_share_pct}% buys the token back and burns it.` : '');
+    }
+  });
   const l = $('lede-rest'); if (l) l.textContent = `, ${cfg.reserve_share_pct ?? 30}% stays in the treasury, ${cfg.ops_share_pct ?? 20}% to OPS` + ((cfg.buyback_share_pct ?? 0) ? `, ${cfg.buyback_share_pct}% buys the token back and burns it` : '');
   const h = document.querySelector('.hero .lede b');
   const d = document.querySelector('.hero .lede');
-  if (d && !d.dataset.evm) { d.dataset.evm = '1'; d.innerHTML = d.innerHTML.replace('The desk collects the creator fee on every trade of the coin and puts its reserve to work as liquidity in Solana’s calmest, best-paying pools, with a hard cap and an automatic circuit breaker.', 'The desk takes a share of every trade of the coin, claims it on-chain every few minutes and swaps it to USDG on the spot.'); }
+  if (d && !d.dataset.evm) {
+    d.dataset.evm = '1';
+    d.innerHTML = d.innerHTML
+      .replace('A market-making fund, issued as a token.', 'A token that pays its holders out of its own trading.')
+      .replace('The desk collects the creator fee on every trade of the coin and puts its reserve to work as liquidity in Solana’s calmest, best-paying pools, with a hard cap and an automatic circuit breaker.', `Every trade pays a <b>${cfg.tax_pct ?? 2}% tax</b> written into the contract. The desk claims it on-chain every few minutes and swaps it straight to USDG, so nothing drifts with the market.`);
+  }
+  const sub = document.querySelector('.logo small'); if (sub) sub.textContent = 'pays holders in USDG';
+  const buy = $('buy');
+  if (buy && C.CONTRACT_ADDRESS) { buy.hidden = false; buy.textContent = 'Buy on pons ↗'; buy.href = `https://www.ponsfamily.com/launchpad/${C.CONTRACT_ADDRESS}`; }
+  const hud = document.querySelector('#hud .tl'); if (hud) hud.textContent = 'DESK · creator tax → holders';
+  document.title = `${C.TICKER} — the token that pays its holders in USDG`;
 }
 $('roi-k').textContent = start > 0 ? `on ${n(start, dp(1))} ${U}, incl. everything paid out` : 'since launch';
 const H = cfg.holder_share_pct ?? 50, R = cfg.reserve_share_pct ?? 30, O = cfg.ops_share_pct ?? 20, B = cfg.buyback_share_pct ?? 0;
 $('lede-split').textContent = H === 50 ? `half to holders in ${U}` : `${H}% to holders in ${U}`;
-$('lede-rest').textContent = `, ${R}% back into the book, ${O}% to OPS` + (B ? `, ${B}% to buy back and burn ${C.TICKER}` : '');
-$('split-chips').innerHTML = `<span><b>${H}%</b> holders · in ${U}</span><span><b>${R}%</b> reserve · the book</span><span><b>${O}%</b> OPS</span>` + (B ? `<span><b>${B}%</b> buyback · burned</span>` : '');
+$('lede-rest').textContent = `, ${R}% ${isEvm() ? 'stays in the treasury' : 'back into the book'}, ${O}% to OPS` + (B ? `, ${B}% to buy back and burn ${C.TICKER}` : '');
+$('split-chips').innerHTML = `<span><b>${H}%</b> holders · in ${U}</span><span><b>${R}%</b> ${isEvm() ? 'treasury' : 'reserve · the book'}</span><span><b>${O}%</b> OPS</span>` + (B ? `<span><b>${B}%</b> buyback · burned</span>` : '');
 if (B) $('faq-trade').textContent = `Only in one way: ${B}% of every payout buys ${C.TICKER} on the open market and burns it, on the same daily clock, in one transaction you can open on Solscan. Outside that it never buys or sells the token, and it never trades to move a price.`;
 const words = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
 if ($('seat-word')) $('seat-word').textContent = cfg.max_seats ? `${words[cfg.max_seats] ?? cfg.max_seats}` : 'Three';
 const hs = (cfg.holder_share_pct ?? 50) / 100;
-setNum('owed', hs * Math.max(Number(st.pot_sol), 0), 4);
+setNum('owed', hs * Math.max(Number(st.pot_sol), 0), dp(4));
+if ($('owed-unit')) $('owed-unit').textContent = U;
 const interval = (cfg.payout_interval_hours ?? 24) * 3600e3;
 const last = st.last_payout_at ? Date.parse(st.last_payout_at) : Date.now();
 const next = st.next_payout_at ? Date.parse(st.next_payout_at) : last + interval;
@@ -141,6 +160,52 @@ const bar = `<span class="gapbar"><i><b class="${hot ? 'hot' : ''}" style="${g >
 const desk = r.open ? `<span class="badge ${r.open}">${r.open === 'sell' ? 'sold rich' : 'bought cheap'}</span>` : `<span class="badge watch">${r.warm ? 'watching' : 'learning'}</span>`;
 return `<tr><td class="t">${esc(r.t)}x</td><td>$${n(r.ref, 2)}${r.ref_age > 180 ? ' <span class="empty">closed</span>' : ''}</td><td>$${n(r.bid, 2)}</td><td>$${n(r.ask, 2)}</td><td>${r.usual >= 0 ? '+' : ''}${n(r.usual, 2)}%</td><td>${r.premium >= 0 ? '+' : ''}${n(r.premium, 2)}%</td><td>${bar}</td><td>${desk}</td></tr>`;
 }).join('') : '<tr><td colspan="8" class="empty">No prices yet.</td></tr>';
+}
+const RH_COPY = {
+  'how-h2': ['No raise. No promise. ', 'A tax, a pot, a clock.'],
+  'how-lede': 'Nobody has to trust a treasury. The desk only pays out what the token itself earned, and it pays it on a clock you can watch.',
+  steps: [
+    ['i · the tax', 'Every trade pays it', 'Buying or selling the token on pons costs a 2% creator tax. It is taken by the contract on every trade, on the bonding curve and in the pool after it graduates. Nobody has to send anything: it accrues on-chain, trade by trade.'],
+    ['ii · the claim', 'The desk collects it', 'The tax piles up on-chain and the keeper claims it the moment it is available, every few minutes. Each claim is a transaction you can open on the explorer.'],
+    ['iii · the swap', 'It is parked in USDG', 'The tax arrives in ETH. The desk swaps it to USDG on the spot, so what holders are owed cannot shrink because ETH moved between the claim and the payout.'],
+    ['iv · the clock', 'It pays the bearer', 'Once a day the pot is split. Holders are paid in USDG, pro rata, with no claiming and no wallet connect. Small amounts accrue until they are worth sending.'],
+  ],
+  about: [
+    'A token usually takes a fee and the fee goes to whoever launched it. This one takes the same fee and gives most of it back to the people holding.',
+    'Every trade of the token pays a 2% tax, written into the contract at launch. The desk is a keeper running around the clock: it claims that tax on-chain every few minutes, swaps it to USDG so its value cannot drift, and holds it until the daily clock runs out.',
+    'Then it splits the pot and sends each holder their share, pro rata, straight to their wallet. There is nothing to claim, nothing to stake, and nothing to connect. Hold the token and the payment arrives.',
+    'Every tax claim, every swap and every payment is a transaction you can open on the explorer. The ledger on this page is written by the same keeper that signs them.',
+  ],
+  faq: {
+    'Where does the money actually come from?': 'The 2% tax on every trade of the token, taken by the contract itself. Not from a treasury, not from new buyers being paid by newer buyers: if the token trades, the desk earns, and if it does not trade, there is nothing to pay out that day.',
+    'What is the split?': null,
+    'What happens on a bad day?': 'A quiet day simply means a small pot: less trading, less tax, a smaller payout. The desk never pays out more than it actually collected, and anything below the dust floor rolls into the next day instead of being lost to fees.',
+    'Can the desk lose everything?': 'The treasury is held in USDG, so it does not swing with the market. The real risk is the token itself: if trading dries up the tax dries up with it, and payouts go to near zero. The token can also lose its value like any other. The desk can only ever pay out what the trading actually earned.',
+    'Does the desk trade the token?': 'Only in one way, and only if the buyback share is switched on: that slice buys the token on the open market and burns it, on the same daily clock, in a transaction you can open on the explorer. It never trades to move the price.',
+  },
+};
+function applyChainCopy() {
+  if (!isEvm() || applyChainCopy.done) return;
+  const h2 = document.querySelector('#how h2');
+  if (h2) h2.innerHTML = `${RH_COPY['how-h2'][0]}<em>${RH_COPY['how-h2'][1]}</em>`;
+  const lede = document.querySelector('#how .lede'); if (lede) lede.textContent = RH_COPY['how-lede'];
+  document.querySelectorAll('#how .step').forEach((el, i) => {
+    const c = RH_COPY.steps[i]; if (!c) return;
+    const h3 = el.querySelector('h3'), p = el.querySelector('p');
+    if (h3) h3.innerHTML = `<small>${c[0]}</small>${c[1]}`;
+    if (p) p.textContent = c[2];
+  });
+  const prose = document.querySelectorAll('#about p.lede');
+  RH_COPY.about.forEach((txt, i) => { if (prose[i]) prose[i].textContent = txt; });
+  document.querySelectorAll('#faq details').forEach((d) => {
+    const q = d.querySelector('summary')?.textContent?.trim();
+    const a = RH_COPY.faq[q];
+    if (a === null) return;                       // keep the split answer, it is rewritten from live config
+    if (a) { const p = d.querySelector('p'); if (p) p.textContent = a; }
+  });
+  // the stock-desk question does not apply on this chain
+  document.querySelectorAll('#faq details').forEach((d) => { if (/stock desk/i.test(d.querySelector('summary')?.textContent || '')) d.hidden = true; });
+  applyChainCopy.done = true;
 }
 function renderPons(st) {
 const el = $('pons'); if (!el) return;
